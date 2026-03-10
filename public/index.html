@@ -405,7 +405,7 @@
             <input type="text" id="usernameInput" class="username-input" placeholder="Your name..." value="Guest">
             <div class="input-wrapper">
                 <div style="position: relative;">
-                    <input type="file" id="fileInput" class="file-input" accept="image/*">
+                    <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf">
                     <button class="upload-btn" id="uploadBtn" title="Upload image">📎</button>
                 </div>
                 <div style="flex: 1; position: relative;">
@@ -437,7 +437,7 @@
         const imageModal = document.getElementById('imageModal');
         const modalImage = document.getElementById('modalImage');
 
-        let selectedImage = null;
+        let selectedFile = null;
         let isFirstMessage = true;
 
         // Focus username input on load
@@ -457,31 +457,62 @@
         });
 
         // File selection
-        fileInput.addEventListener('change', (e) => {
+        fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file && file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    selectedImage = event.target.result;
-                    displayImagePreview(selectedImage);
-                };
-                reader.readAsDataURL(file);
+            if (file) {
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('File upload failed');
+                    }
+
+                    const data = await response.json();
+                    selectedFile = {
+                        url: data.file_url,
+                        name: data.file_name,
+                        type: data.file_type
+                    };
+
+                    displayFilePreview(data.file_type, data.file_name, data.file_url);
+                } catch (error) {
+                    console.error('Error uploading file:', error);
+                    alert('Failed to upload file: ' + error.message);
+                }
             }
         });
 
-        // Display image preview
-        function displayImagePreview(imageData) {
-            imagePreview.innerHTML = `
-        <div style="position: relative; display: inline-block;">
-          <img src="${imageData}" class="image-preview">
-          <button class="remove-image" onclick="removeSelectedImage()">×</button>
-        </div>
-      `;
+        // Display file preview
+        function displayFilePreview(fileType, fileName, fileUrl) {
+            if (fileType === 'image') {
+                imagePreview.innerHTML = `
+          <div style="position: relative; display: inline-block;">
+            <img src="${fileUrl}" class="image-preview">
+            <button class="remove-image" onclick="removeSelectedFile()">×</button>
+          </div>
+        `;
+            } else if (fileType === 'pdf') {
+                imagePreview.innerHTML = `
+          <div style="position: relative; display: inline-block; text-align: center;">
+            <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 40px; font-weight: bold;">
+              PDF
+            </div>
+            <p style="margin-top: 8px; font-size: 12px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</p>
+            <button class="remove-image" onclick="removeSelectedFile()" style="position: absolute; top: -8px; right: -8px;">×</button>
+          </div>
+        `;
+            }
         }
 
-        // Remove selected image
-        window.removeSelectedImage = () => {
-            selectedImage = null;
+        // Remove selected file
+        window.removeSelectedFile = () => {
+            selectedFile = null;
             imagePreview.innerHTML = '';
             fileInput.value = '';
         };
@@ -491,13 +522,19 @@
             const text = messageInput.value.trim();
             const sender = usernameInput.value.trim() || 'Guest';
 
-            if (!text && !selectedImage) return;
+            if (!text && !selectedFile) return;
 
             const messageData = {
                 sender,
-                text,
-                image: selectedImage
+                text
             };
+
+            // Add file info if available
+            if (selectedFile) {
+                messageData.file_url = selectedFile.url;
+                messageData.file_type = selectedFile.type;
+                messageData.file_name = selectedFile.name;
+            }
 
             // Send via socket
             socket.emit('sendMessage', messageData);
@@ -505,7 +542,7 @@
             // Update UI
             messageInput.value = '';
             messageInput.style.height = 'auto';
-            removeSelectedImage();
+            removeSelectedFile();
 
             // Clear empty state
             if (isFirstMessage) {
@@ -571,10 +608,19 @@
                 content += `<div class="message-text">${escapeHtml(messageData.text)}</div>`;
             }
 
-            if (messageData.image) {
-                content += `
-          <img src="${messageData.image}" class="message-image" onclick="openImageModal('${messageData.image}')">
+            if (messageData.file_url) {
+                if (messageData.file_type === 'image') {
+                    content += `
+          <img src="${messageData.file_url}" class="message-image" onclick="openImageModal('${messageData.file_url}')">
         `;
+                } else if (messageData.file_type === 'pdf') {
+                    content += `
+          <div class="message-file" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 6px; text-align: center; cursor: pointer;" onclick="window.open('${messageData.file_url}', '_blank')">
+            <div style="font-size: 28px; margin-bottom: 4px;">📄</div>
+            <div style="font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 auto;">${messageData.file_name || 'PDF File'}</div>
+          </div>
+        `;
+                }
             }
 
             const time = new Date(messageData.timestamp).toLocaleTimeString([], {

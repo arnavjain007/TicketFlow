@@ -1,7 +1,7 @@
 {
     "servers": {
         "my-mcp-server-1166abea": {
-            "url": "http://localhost:5678/mcp-test/c455f220-a6ac-4e60-b914-ad267d192c19",
+            "url": "http://localhost:5678/mcp/a3021760-a32a-4e60-948d-dd856fcf3d3d",
             "type": "http"
         }
     },

@@ -136,7 +136,7 @@ Socket.io Client (Browser)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | PORT | 8000 | Server port |
-| N8N_WEBHOOK_URL | http://localhost:5678/mcp-test/c455f220-a6ac-4e60-b914-ad267d192c19 | n8n webhook endpoint |
+| N8N_WEBHOOK_URL | http://localhost:5678/webhook-test/c455f220-a6ac-4e60-b914-ad267d192c19 | n8n webhook endpoint |
 | DEBUG | false | Enable debug logging |
 
 ## Technologies Used
