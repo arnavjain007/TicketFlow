@@ -19,7 +19,7 @@ const io = socketIo(server, {
 
 const PORT = process.env.PORT || 8000;
 const N8N_WEBHOOK_URL =
-    process.env.N8N_WEBHOOK_URL || 'http://[::1]:5678/webhook-test/chat-support';
+    process.env.N8N_WEBHOOK_URL || 'http://[::1]:5678/webhook/chat-support';
 // const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat-support';
 
 // Ensure uploads directory exists
@@ -268,9 +268,9 @@ async function sendToN8n(messageData) {
     } catch (error) {
         console.error('❌ Error sending to n8n:', error.response?.data || error.message);
 
-        if (messageQueue.length < 100) {
-            messageQueue.push(messageData);
-        }
+        // if (messageQueue.length < 100) {
+        //     messageQueue.push(messageData);
+        // }
 
         n8nConnected = false;
         return null;
@@ -422,10 +422,10 @@ server.listen(PORT, '0.0.0.0', () => {
 
     initializeN8nConnection();
 
-    setInterval(async () => {
-        if (!n8nConnected) {
-            console.log('🔄 Attempting to reconnect to n8n...');
-            await initializeN8nConnection();
-        }
-    }, 30000);
+    // setInterval(async () => {
+    //     if (!n8nConnected) {
+    //         console.log('🔄 Attempting to reconnect to n8n...');
+    //         await initializeN8nConnection();
+    //     }
+    // }, 30000);
 });
