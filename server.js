@@ -19,8 +19,7 @@ const io = socketIo(server, {
 
 const PORT = process.env.PORT || 8000;
 const N8N_WEBHOOK_URL =
-    process.env.N8N_WEBHOOK_URL || 'http://[::1]:5678/webhook/chat-support';
-// const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat-support';
+    process.env.N8N_WEBHOOK_URL || 'http://[::1]:5678/webhook-test/chat-support';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -33,6 +32,23 @@ let messages = [];
 let activeUsers = 0;
 let n8nConnected = false;
 let messageQueue = [];
+
+// In-memory chat memory store for POC
+// Structure:
+// {
+//   sessionId1: [
+//     {
+//       role: 'user' | 'assistant',
+//       message_text: '...',
+//       intent: '...',
+//       matched_issue: '...',
+//       ticket_id: '...',
+//       messageId: '...',
+//       created_at: '...'
+//     }
+//   ]
+// }
+const chatMemoryStore = {};
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -82,7 +98,8 @@ app.get('/health', (req, res) => {
         messageCount: messages.length,
         n8nConnected,
         n8nWebhookUrl: N8N_WEBHOOK_URL,
-        queuedMessages: messageQueue.length
+        queuedMessages: messageQueue.length,
+        memorySessions: Object.keys(chatMemoryStore).length
     });
 });
 
@@ -94,7 +111,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
         }
 
         const fileUrl = `http://localhost:${PORT}/${req.file.filename}`;
-        const fileType = req.file.mimetype.startsWith('image') ? 'image' : 'pdf';
+        const fileType = req.file.mimetype;
 
         console.log(`📁 File uploaded: ${req.file.originalname} -> ${fileUrl}`);
 
@@ -114,11 +131,12 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // REST endpoint to send messages (PDF/image/text) via POST
 app.post('/api/messages', async (req, res) => {
     try {
-        const { sender, text, file_url, file_type, file_name } = req.body;
+        const { sender, text, file_url, file_type, file_name, sessionId } = req.body;
 
         const messageData = {
             type: 'message',
             sender: sender || 'Anonymous',
+            sessionId: sessionId || sender || 'Guest',
             timestamp: new Date().toISOString(),
             text: text || '',
             file_url: file_url || null,
@@ -155,6 +173,7 @@ io.on('connection', (socket) => {
             const messageData = {
                 type: 'message',
                 sender: data.sender || 'Anonymous',
+                sessionId: data.sessionId || data.sender || socket.id,
                 timestamp: new Date().toISOString(),
                 text: data.text || '',
                 file_url: data.file_url || null,
@@ -172,6 +191,7 @@ io.on('connection', (socket) => {
             console.log('🌐 n8n webhook result:', n8nResult);
 
             console.log(`Message received from ${messageData.sender}:`, {
+                sessionId: messageData.sessionId,
                 text: messageData.text.substring(0, 50),
                 hasFile: !!messageData.file_url,
                 fileType: messageData.file_type,
@@ -230,6 +250,7 @@ async function sendToN8n(messageData) {
 
             const form = new FormData();
             form.append('sender', messageData.sender);
+            form.append('sessionId', messageData.sessionId || messageData.sender || 'Guest');
             form.append('text', messageData.text);
             form.append('timestamp', messageData.timestamp);
             form.append('messageId', messageData.messageId);
@@ -248,6 +269,7 @@ async function sendToN8n(messageData) {
         } else {
             const payload = {
                 sender: messageData.sender,
+                sessionId: messageData.sessionId || messageData.sender || 'Guest',
                 text: messageData.text,
                 file_url: messageData.file_url,
                 file_type: messageData.file_type,
@@ -267,11 +289,6 @@ async function sendToN8n(messageData) {
         return response.data;
     } catch (error) {
         console.error('❌ Error sending to n8n:', error.response?.data || error.message);
-
-        // if (messageQueue.length < 100) {
-        //     messageQueue.push(messageData);
-        // }
-
         n8nConnected = false;
         return null;
     }
@@ -305,6 +322,109 @@ app.post('/api/reconnect-n8n', async (req, res) => {
         connected: n8nConnected
     });
 });
+
+// -------------------- MEMORY ROUTES --------------------
+
+// Load memory for a session
+app.post('/api/chat-memory/get', (req, res) => {
+    try {
+        const { sessionId, limit = 6 } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId is required' });
+        }
+
+        const sessionMessages = chatMemoryStore[sessionId] || [];
+        const recentMessages = sessionMessages.slice(-Number(limit || 6));
+
+        res.json({
+            success: true,
+            sessionId,
+            messages: recentMessages
+        });
+    } catch (error) {
+        console.error('❌ Error loading chat memory:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Save one user+assistant turn
+app.post('/api/chat-memory/save-turn', (req, res) => {
+    try {
+        const {
+            sessionId,
+            user_message,
+            assistant_message,
+            intent = null,
+            matched_issue = null,
+            ticket_id = null,
+            messageId = null
+        } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId is required' });
+        }
+
+        if (!chatMemoryStore[sessionId]) {
+            chatMemoryStore[sessionId] = [];
+        }
+
+        if (user_message) {
+            chatMemoryStore[sessionId].push({
+                role: 'user',
+                message_text: user_message,
+                intent,
+                matched_issue,
+                ticket_id,
+                messageId,
+                created_at: new Date().toISOString()
+            });
+        }
+
+        if (assistant_message) {
+            chatMemoryStore[sessionId].push({
+                role: 'assistant',
+                message_text: assistant_message,
+                intent,
+                matched_issue,
+                ticket_id,
+                messageId,
+                created_at: new Date().toISOString()
+            });
+        }
+
+        // Keep last 20 entries only per session for POC
+        if (chatMemoryStore[sessionId].length > 20) {
+            chatMemoryStore[sessionId] = chatMemoryStore[sessionId].slice(-20);
+        }
+
+        res.json({
+            success: true,
+            sessionId,
+            totalMessages: chatMemoryStore[sessionId].length
+        });
+    } catch (error) {
+        console.error('❌ Error saving chat memory:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Optional debug endpoint
+app.get('/api/chat-memory/:sessionId', (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        res.json({
+            success: true,
+            sessionId,
+            messages: chatMemoryStore[sessionId] || []
+        });
+    } catch (error) {
+        console.error('❌ Error fetching chat memory by sessionId:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// -------------------- EXISTING RESPONSE/TICKET ROUTES --------------------
 
 // GET endpoint for testing responses quickly in browser/curl
 app.get('/api/send-response', (req, res) => {
@@ -421,11 +541,4 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`📡 Connecting to n8n workflow: ${N8N_WEBHOOK_URL}\n`);
 
     initializeN8nConnection();
-
-    // setInterval(async () => {
-    //     if (!n8nConnected) {
-    //         console.log('🔄 Attempting to reconnect to n8n...');
-    //         await initializeN8nConnection();
-    //     }
-    // }, 30000);
 });

@@ -1,47 +1,92 @@
 {
-    "name": "My workflow",
+    "name": "Chat Support - Intent + Memory + KB",
     "nodes": [
         {
             "parameters": {
                 "httpMethod": "POST",
                 "path": "chat-support",
-                "responseMode": "responseNode",
                 "options": {}
             },
-            "id": "de003912-c417-4f7b-ad47-072a2351b77f",
+            "id": "23b4c6dd-0e74-4e3a-a257-dea2f19119e6",
             "name": "Webhook1",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 1,
             "position": [
-                -1840,
-                424
+                -2400,
+                3824
             ],
-            "webhookId": "5dd43252-0e1d-4e82-86cd-da81f0d91bcb"
+            "webhookId": "chat-support-webhook"
         },
         {
             "parameters": {
-                "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst text = body.text || \"\";\nconst sender = body.sender || \"Unknown\";\n\nconst fileUrl = body.file_url || null;\nconst fileType = body.file_type || \"\";\nconst fileName = body.file_name || \"\";\n\nconst isPdf = fileType === \"application/pdf\" || fileName.toLowerCase().endsWith(\".pdf\");\nconst isImage = fileType.startsWith(\"image/\") || [\".png\", \".jpg\", \".jpeg\", \".webp\"].some(ext => fileName.toLowerCase().endsWith(ext));\n\nreturn [\n  {\n    json: {\n      sender,\n      message: text,\n      file_url: fileUrl,\n      file_type: fileType,\n      file_name: fileName,\n      hasPdf: isPdf,\n      hasImage: isImage,\n      messageId: body.messageId || \"\",\n      timestamp: body.timestamp || new Date().toISOString()\n    }\n  }\n];"
+                "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst text = String(body.text || '').trim();\nconst sender = body.sender || 'Unknown';\nconst sessionId = body.sessionId || body.userId || body.sender || `session_${Date.now()}`;\nconst history = Array.isArray(body.history) ? body.history : [];\n\nconst fileUrl = body.file_url || null;\nconst fileType = body.file_type || '';\nconst fileName = body.file_name || '';\n\nconst hasPdf = fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');\nconst hasImage = fileType.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp'].some(ext => fileName.toLowerCase().endsWith(ext));\nconst hasAttachment = Boolean(fileUrl || hasPdf || hasImage);\n\nreturn [{\n  json: {\n    sender,\n    sessionId,\n    message: text,\n    history,\n    file_url: fileUrl,\n    file_type: fileType,\n    file_name: fileName,\n    hasPdf,\n    hasImage,\n    hasAttachment,\n    messageId: body.messageId || '',\n    timestamp: body.timestamp || new Date().toISOString()\n  }\n}];"
             },
-            "id": "a59494a5-3181-446f-b425-c277cfc2aecf",
+            "id": "00e1d1a2-f561-4986-9286-ba6d3726e601",
             "name": "Extract Message Data1",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -1616,
-                328
+                -2176,
+                3824
             ]
         },
         {
             "parameters": {
-                "jsCode": "const data = $input.first().json;\n\nlet inputType = \"text\";\nif (data.hasPdf) inputType = \"pdf\";\nelse if (data.hasImage) inputType = \"image\";\n\nreturn [\n  {\n    json: {\n      ...data,\n      inputType\n    }\n  }\n];"
+                "jsCode": "const data = $input.first().json;\nconst normalizedText = (data.message || '').toLowerCase().trim().replace(/\\s+/g, ' ');\nconst errorMatch = normalizedText.match(/\\b(400|401|403|404|408|409|429|500|502|503|504)\\b/);\n\nlet attachmentHint = 'none';\nif (data.hasPdf) attachmentHint = 'pdf';\nelse if (data.hasImage) attachmentHint = 'image';\n\nreturn [{\n  json: {\n    ...data,\n    normalizedText,\n    possibleErrorCode: errorMatch ? errorMatch[1] : null,\n    attachmentHint,\n    isEmptyMessage: !normalizedText && !data.hasAttachment\n  }\n}];"
             },
-            "id": "f967ddca-bf87-4400-9616-553a41fae5c5",
-            "name": "Route Input Type1",
+            "id": "e1751b3c-0659-426c-8984-0af4655a5cfc",
+            "name": "Normalize Input",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -1392,
-                328
+                -1952,
+                3896
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/get",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"sessionId\": \"{{ $json.sessionId }}\",\n  \"limit\": 20\n}",
+                "options": {}
+            },
+            "id": "4503716e-902b-408b-9e4a-7e70219d1b78",
+            "name": "Load Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1728,
+                3896
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "combine",
+                "combineBy": "combineAll",
+                "options": {}
+            },
+            "id": "3921f819-e665-44d2-9c41-678266952fa3",
+            "name": "Merge Input + Memory",
+            "type": "n8n-nodes-base.merge",
+            "typeVersion": 3.2,
+            "position": [
+                -1504,
+                3824
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const item = $input.first().json;\n\nconst messagesRaw =\n  item.messages ||\n  item.data?.messages ||\n  item.memory ||\n  item.chat_memory ||\n  [];\n\nconst memoryRows = Array.isArray(messagesRaw) ? messagesRaw : [];\n\nconst historyFromDb = memoryRows.map(row => ({\n  role: row.role || 'user',\n  text: row.message_text || row.text || '',\n  intent: row.intent || null,\n  matched_issue: row.matched_issue || null,\n  ticket_id: row.ticket_id || null,\n  created_at: row.created_at || null\n})).filter(x => x.text);\n\nconst incomingHistory = Array.isArray(item.history) ? item.history : [];\nconst history = historyFromDb.length > 0 ? historyFromDb : incomingHistory;\n\nlet latestTicketEntry = null;\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  if (h.ticket_id && String(h.ticket_id).trim() !== '') {\n    latestTicketEntry = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    history,\n    latest_ticket_id: latestTicketEntry ? latestTicketEntry.ticket_id : null,\n    latest_ticket_message: latestTicketEntry ? latestTicketEntry.text : null,\n    has_existing_ticket: !!(latestTicketEntry && latestTicketEntry.ticket_id)\n  }\n}];"
+            },
+            "id": "3b87008b-881f-44fb-af9b-76008f559d5d",
+            "name": "Build Conversation Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1280,
+                3824
             ]
         },
         {
@@ -55,145 +100,39 @@
                     },
                     "conditions": [
                         {
-                            "id": "62de3c83-7e27-4634-b3d5-7a27c1d9d60e",
-                            "leftValue": "={{ $json.hasPdf }}",
+                            "leftValue": "={{ $json.isEmptyMessage }}",
                             "rightValue": true,
                             "operator": {
                                 "type": "boolean",
                                 "operation": "equals"
-                            }
+                            },
+                            "id": "38437108-1ed9-4889-8d51-391818e852f1"
                         }
                     ],
                     "combinator": "and"
                 },
                 "options": {}
             },
-            "id": "ca49b083-53ad-4c63-beb5-3ac461b00910",
-            "name": "Is PDF?1",
+            "id": "8c2140fe-629d-4b79-ad03-7ab19284ff84",
+            "name": "Empty Message?",
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                -1168,
-                328
+                -1056,
+                3824
             ]
         },
         {
             "parameters": {
-                "jsCode": "const item = $input.first().json;\n\n// Mock PDF text extraction for POC.\n// Replace later with real PDF text extraction.\nconst pdfText = \"\";\n\nreturn [\n  {\n    json: {\n      ...item,\n      pdf_text: pdfText,\n      pdf_text_found: pdfText.trim().length > 0\n    }\n  }\n];"
+                "jsCode": "return [{\n  json: {\n    ...$json,\n    apiPayload: {\n      response: 'Please type your issue or upload a screenshot/PDF so I can help you.',\n      sender: 'AI Assistant',\n      category: 'empty_message',\n      originalMessageId: $json.messageId || ''\n    }\n  }\n}];"
             },
-            "id": "2666e9fe-8f64-4b12-86e9-998102cc3293",
-            "name": "Extract PDF Text1",
+            "id": "e67c9959-7e4c-47ba-8bef-6250c546ea76",
+            "name": "Prepare Empty Response",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -944,
-                208
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "boolean": [
-                        {
-                            "value1": "={{ $json.pdf_text_found }}",
-                            "operation": "isTrue"
-                        }
-                    ]
-                },
-                "options": {}
-            },
-            "id": "7a8b74de-cc06-42c1-8e75-daa31ce34a52",
-            "name": "PDF Text Found?1",
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2,
-            "position": [
-                -720,
-                208
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const item = $input.first().json;\n\n// Mock OCR for scanned PDFs.\n// Replace later with real OCR.\nreturn [\n  {\n    json: {\n      ...item,\n      ocr_text: \"Extracted text from scanned PDF via OCR\"\n    }\n  }\n];"
-            },
-            "id": "70c4bd2b-cb52-4589-a50c-c72723f9e378",
-            "name": "OCR PDF1",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                -496,
-                160
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": true,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 1
-                    },
-                    "conditions": [
-                        {
-                            "id": "2752088f-c75d-45a3-93b9-21aa5186846b",
-                            "leftValue": "={{ $json.hasImage }}",
-                            "rightValue": true,
-                            "operator": {
-                                "type": "boolean",
-                                "operation": "equals"
-                            }
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {}
-            },
-            "id": "90d4c796-03bf-4ac3-bc36-b1082d1105e0",
-            "name": "Is Image?1",
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2,
-            "position": [
-                -720,
-                448
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const item = $input.first().json;\n\n// Mock OCR for image files.\n// Replace later with real OCR.\nreturn [\n  {\n    json: {\n      ...item,\n      ocr_text: \"Extracted text from image via OCR\"\n    }\n  }\n];"
-            },
-            "id": "3e482f23-6535-42cd-a60e-1c73e2f4ef1b",
-            "name": "OCR Image1",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                -496,
-                544
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const prev = $input.first().json;\n\nconst extractedText = [\n  prev.pdf_text || \"\",\n  prev.ocr_text || \"\"\n].filter(Boolean).join(\"\\n\");\n\nconst fullText = [\n  prev.message ? `User Message: ${prev.message}` : \"\",\n  extractedText ? `Extracted Text: ${extractedText}` : \"\"\n].filter(Boolean).join(\"\\n\\n\");\n\nreturn [\n  {\n    json: {\n      ...prev,\n      extracted_text: extractedText,\n      fullText\n    }\n  }\n];"
-            },
-            "id": "47df1466-9806-43c9-8266-8084b3529d06",
-            "name": "Combine Text1",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                -272,
-                352
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const item = $input.first().json;\n\nreturn [\n  {\n    json: {\n      ...item,\n      response: \"Your issue has been logged and a support ticket has been created. Our team will contact you shortly.\"\n    }\n  }\n];"
-            },
-            "id": "077188d9-fc6a-4b9d-b729-33cece33a15c",
-            "name": "Prepare Ticket Response1",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                976,
-                592
+                -768,
+                3728
             ]
         },
         {
@@ -202,69 +141,16 @@
                 "url": "http://172.17.0.1:8000/api/send-response",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"response\": \"{{ $json.parsed_response.short_resolution_or_hint }}\",\n  \"sender\": \"AI Assistant\",\n  \"category\": \"{{ $json.parsed_response.matched_issue || '' }}\",\n  \"originalMessageId\": \"{{ $json.messageId || '' }}\"\n}",
+                "jsonBody": "={{ $json.apiPayload }}",
                 "options": {}
             },
-            "id": "603cea5a-38b0-4938-92a4-2e9643aea5c5",
-            "name": "Send Response1",
+            "id": "a3b565bb-050c-4ff7-90c6-10a516d92b34",
+            "name": "Send Empty Response",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                976,
-                400
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": false,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 3
-                    },
-                    "conditions": [
-                        {
-                            "id": "f7f0acba-8d4c-496a-8259-6576dbdcf8aa",
-                            "leftValue": "={{ $json.parsed_response.matched_issue }}",
-                            "rightValue": "no_match",
-                            "operator": {
-                                "type": "string",
-                                "operation": "notEquals"
-                            }
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {
-                    "ignoreCase": true
-                }
-            },
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2.3,
-            "position": [
-                752,
-                496
-            ],
-            "id": "60163790-1d60-445b-844a-d7226074005a",
-            "name": "Satisfactory answer?"
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/tickets",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={\n  \"ticket_title\": \"={{ $json.parsed_response.matched_issue !== 'no_match' ? $json.parsed_response.matched_issue : 'Manual support ticket' }}\",\n  \"ticket_description\": \"={{ $json.response || $json.parsed_response.short_resolution_or_hint || 'No matching KB issue found. Needs manual review.' }}\",\n  \"category\": \"={{ $json.parsed_response.matched_issue || '' }}\",\n  \"priority\": \"Medium\"\n}",
-                "options": {}
-            },
-            "id": "296b15f7-7486-4a41-94bd-edc6cbb9fbe6",
-            "name": "Send Response2",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                1200,
-                592
+                -480,
+                3728
             ]
         },
         {
@@ -278,21 +164,21 @@
                 "messages": {
                     "values": [
                         {
-                            "content": "=You are a support issue classifier.\n\nUser query:\n{{ $json.fullText }}\n\nKnowledge base:\n{{ JSON.stringify($json.kb) }}\n\nInstructions:\n- Read the user query.\n- Compare it against all entries in the knowledge base.\n- Find the closest matching issue by meaning.\n- Use the matching short_resolution_or_hint if relevant.\n- If nothing matches clearly, return \"no_match\".\n- Return JSON only.\n\nOutput format:\n{\n  \"matched_issue\": \"\",\n  \"short_resolution_or_hint\": \"\",\n  \"confidence\": \"\",\n  \"needs_ticket\": false\n}"
+                            "content": "=You are an intent classifier for a customer support chatbot.\n\nClassify the user's latest message into exactly one of these intents:\n- greeting\n- error_code_issue\n- general_issue\n- follow_up\n- gibberish\n- unclear\n\nRules:\n- greeting: hi, hello, hey, hii, heyy, gm, good morning, good evening, yo, sup\n- error_code_issue: message contains an error/status code like 404, 401, 403, 500, 503 or clearly refers to such an error\n- follow_up: user continues an earlier issue, such as \"still not working\", \"same issue\", \"what now\", \"not resolved yet\"\n- general_issue: a support issue/query that is not just a greeting and is not clearly a follow-up-only message\n- gibberish: message is meaningless, random characters, broken words, keyboard mash, or does not form an understandable request, such as \"asdjkh123\", \"xxxyyyzzz\", \"qwertyuiop\", \".....\", \"efhosefho\"\n- unclear: message is too short, vague, or incomplete but still looks like it may be a real human request, such as \"help\", \"issue\", \"problem\", \"check this\"\n\nReturn ONLY valid JSON in this format:\n{\n  \"intent\": \"greeting | error_code_issue | general_issue | follow_up | gibberish | unclear\",\n  \"confidence\": 0.0,\n  \"error_code\": \"string or null\",\n  \"needs_ocr\": true,\n  \"direct_reply\": \"string or null\",\n  \"normalized_user_need\": \"string\",\n  \"needs_ticket\": false\n}\n\nAdditional rules:\n- If the message is a greeting, set direct_reply to a friendly greeting response.\n- If there is an attachment and the issue may depend on it, set needs_ocr to true.\n- If there is a clear error code, extract it into error_code.\n- Use conversation history only when the latest message is a genuine continuation of an earlier issue.\n- If the latest message is meaningless or nonsense, classify it as gibberish even if history exists.\n- If the message is gibberish, set normalized_user_need to \"Unintelligible or meaningless input\".\n- Do not answer the actual issue here except for greetings.\n- Output JSON only, no markdown.\n\nInput:\n{{ JSON.stringify({\n  message: $json.message,\n  normalizedText: $json.normalizedText,\n  possibleErrorCode: $json.possibleErrorCode,\n  hasAttachment: $json.hasAttachment,\n  attachmentHint: $json.attachmentHint,\n  history: ($json.history || []).slice(-6)\n}) }}"
                         }
                     ]
                 },
                 "builtInTools": {},
                 "options": {}
             },
+            "id": "e5457762-77c5-4488-91e7-159abb1cd380",
+            "name": "Intent Classifier",
             "type": "@n8n/n8n-nodes-langchain.googleGemini",
             "typeVersion": 1.1,
             "position": [
-                176,
-                496
+                -832,
+                3920
             ],
-            "id": "931b50a9-0bef-447f-b473-bc6c665332f4",
-            "name": "Message a model",
             "credentials": {
                 "googlePalmApi": {
                     "id": "VU4lYlt9NwCfUiPY",
@@ -302,44 +188,62 @@
         },
         {
             "parameters": {
-                "jsCode": "const item = $input.first().json;\n\nconst kb = [\n  {\n    \"short_issue\": \"404 Not Found\",\n    \"short_resolution_or_hint\": \"The requested resource or endpoint does not exist. Verify the URL or webhook path.\",\n    \"duplicate_count\": 18,\n    \"example_subjects\": [\"Webhook not registered\", \"API endpoint not found\"]\n  },\n  {\n    \"short_issue\": \"401 Unauthorized\",\n    \"short_resolution_or_hint\": \"Authentication failed. Check API keys, tokens, or login credentials.\",\n    \"duplicate_count\": 14,\n    \"example_subjects\": [\"Invalid API token\", \"Authentication required\"]\n  },\n  {\n    \"short_issue\": \"403 Forbidden\",\n    \"short_resolution_or_hint\": \"Access to the resource is denied. Ensure proper permissions are granted.\",\n    \"duplicate_count\": 9,\n    \"example_subjects\": [\"Permission denied\", \"User not allowed to access resource\"]\n  },\n  {\n    \"short_issue\": \"500 Internal Server Error\",\n    \"short_resolution_or_hint\": \"The server encountered an unexpected condition. Check backend logs for details.\",\n    \"duplicate_count\": 12,\n    \"example_subjects\": [\"Server crashed while processing request\"]\n  },\n  {\n    \"short_issue\": \"503 Service Unavailable\",\n    \"short_resolution_or_hint\": \"The service is temporarily unavailable due to overload or maintenance. Retry later.\",\n    \"duplicate_count\": 7,\n    \"example_subjects\": [\"Service temporarily unavailable\", \"Server overloaded\"]\n  },\n  {\n    \"short_issue\": \"Dashboard or access request\",\n    \"short_resolution_or_hint\": \"Confirm required access and share approval if needed.\",\n    \"duplicate_count\": 408,\n    \"example_subjects\": [\"New response for Access Rights Request Form\"]\n  },\n  {\n    \"short_issue\": \"Payment or invoice issue\",\n    \"short_resolution_or_hint\": \"Check invoice upload, payment status, or missing UTR.\",\n    \"duplicate_count\": 254,\n    \"example_subjects\": [\"URGENT REQUEST FOR PAYMENT | SIRONA HYGIENE PRIVATE LIMITED | GONSAI LOGISITCS PVT LTD\"]\n  },\n  {\n    \"short_issue\": \"Approval request\",\n    \"short_resolution_or_hint\": \"Review request and share required approval.\",\n    \"duplicate_count\": 231,\n    \"example_subjects\": [\"M/S.PEARL IMPEX INC Approval Request - Others\"]\n  },\n  {\n    \"short_issue\": \"Laptop or hardware issue\",\n    \"short_resolution_or_hint\": \"Check device issue, repair, or replacement request.\",\n    \"duplicate_count\": 161,\n    \"example_subjects\": [\"Laptop Issue\"]\n  },\n  {\n    \"short_issue\": \"Internet or network issue\",\n    \"short_resolution_or_hint\": \"Check Wi-Fi, LAN, or network speed issue.\",\n    \"duplicate_count\": 159,\n    \"example_subjects\": [\"Network Test\"]\n  },\n  {\n    \"short_issue\": \"Salary or payslip issue\",\n    \"short_resolution_or_hint\": \"Check salary credit, payslip, or reimbursement details.\",\n    \"duplicate_count\": 154,\n    \"example_subjects\": [\"Payslip issue\"]\n  },\n  {\n    \"short_issue\": \"Leave or attendance issue\",\n    \"short_resolution_or_hint\": \"Check leave balance, attendance, or approval status.\",\n    \"duplicate_count\": 150,\n    \"example_subjects\": [\"Leave approval pending\"]\n  },\n  {\n    \"short_issue\": \"Employee onboarding issue\",\n    \"short_resolution_or_hint\": \"Check joining steps, document submission, or account setup.\",\n    \"duplicate_count\": 146,\n    \"example_subjects\": [\"Onboarding issue\"]\n  },\n  {\n    \"short_issue\": \"System access not working\",\n    \"short_resolution_or_hint\": \"Verify login rights, reset password, or enable account.\",\n    \"duplicate_count\": 140,\n    \"example_subjects\": [\"Unable to login\"]\n  },\n  {\n    \"short_issue\": \"Bank account or IFSC update\",\n    \"short_resolution_or_hint\": \"Verify bank details and update account or IFSC.\",\n    \"duplicate_count\": 136,\n    \"example_subjects\": [\"Bank details update\"]\n  },\n  {\n    \"short_issue\": \"Loan disbursement pending\",\n    \"short_resolution_or_hint\": \"Check disbursement stage, bank validation, or pending action.\",\n    \"duplicate_count\": 133,\n    \"example_subjects\": [\"Disbursement pending\"]\n  },\n  {\n    \"short_issue\": \"Reimbursement issue\",\n    \"short_resolution_or_hint\": \"Check claim status, bill submission, or approval flow.\",\n    \"duplicate_count\": 131,\n    \"example_subjects\": [\"Reimbursement not received\"]\n  },\n  {\n    \"short_issue\": \"ID card or asset request\",\n    \"short_resolution_or_hint\": \"Check issue, replacement, or dispatch status.\",\n    \"duplicate_count\": 128,\n    \"example_subjects\": [\"ID card not received\"]\n  },\n  {\n    \"short_issue\": \"Travel or cab issue\",\n    \"short_resolution_or_hint\": \"Check travel booking, cab request, or reimbursement status.\",\n    \"duplicate_count\": 125,\n    \"example_subjects\": [\"Cab reimbursement issue\"]\n  },\n  {\n    \"short_issue\": \"Insurance or medical claim issue\",\n    \"short_resolution_or_hint\": \"Check claim documents, policy details, or approval status.\",\n    \"duplicate_count\": 122,\n    \"example_subjects\": [\"Medical insurance claim\"]\n  },\n  {\n    \"short_issue\": \"PF, UAN, or EPF issue\",\n    \"short_resolution_or_hint\": \"Check PF details, UAN linking, or transfer status.\",\n    \"duplicate_count\": 120,\n    \"example_subjects\": [\"PF issue\"]\n  },\n  {\n    \"short_issue\": \"Tax or Form 16 issue\",\n    \"short_resolution_or_hint\": \"Check tax deduction, Form 16, or declaration details.\",\n    \"duplicate_count\": 118,\n    \"example_subjects\": [\"Form 16 not received\"]\n  },\n  {\n    \"short_issue\": \"Invoice upload or GST issue\",\n    \"short_resolution_or_hint\": \"Verify invoice format, GST details, or upload status.\",\n    \"duplicate_count\": 116,\n    \"example_subjects\": [\"GST invoice issue\"]\n  },\n  {\n    \"short_issue\": \"Password reset request\",\n    \"short_resolution_or_hint\": \"Reset password or verify account recovery steps.\",\n    \"duplicate_count\": 113,\n    \"example_subjects\": [\"Password reset\"]\n  },\n  {\n    \"short_issue\": \"Email not working\",\n    \"short_resolution_or_hint\": \"Check mailbox access, sending issue, or account setup.\",\n    \"duplicate_count\": 111,\n    \"example_subjects\": [\"Outlook not working\"]\n  },\n  {\n    \"short_issue\": \"App or portal bug\",\n    \"short_resolution_or_hint\": \"Check error, affected page, and recent changes.\",\n    \"duplicate_count\": 109,\n    \"example_subjects\": [\"Portal issue\"]\n  },\n  {\n    \"short_issue\": \"Mobile device issue\",\n    \"short_resolution_or_hint\": \"Check device setup, SIM issue, or replacement need.\",\n    \"duplicate_count\": 107,\n    \"example_subjects\": [\"Phone issue\"]\n  },\n  {\n    \"short_issue\": \"Account locked or disabled\",\n    \"short_resolution_or_hint\": \"Unlock account and verify user identity or permissions.\",\n    \"duplicate_count\": 105,\n    \"example_subjects\": [\"Account locked\"]\n  },\n  {\n    \"short_issue\": \"Document submission pending\",\n    \"short_resolution_or_hint\": \"Check required documents and pending verification.\",\n    \"duplicate_count\": 103,\n    \"example_subjects\": [\"Documents pending\"]\n  },\n  {\n    \"short_issue\": \"Laptop accessories request\",\n    \"short_resolution_or_hint\": \"Check request for charger, mouse, bag, or other accessories.\",\n    \"duplicate_count\": 101,\n    \"example_subjects\": [\"Laptop charger request\"]\n  },\n  {\n    \"short_issue\": \"Attendance regularization request\",\n    \"short_resolution_or_hint\": \"Verify missed punch and update attendance records.\",\n    \"duplicate_count\": 99,\n    \"example_subjects\": [\"Attendance regularization\"]\n  },\n  {\n    \"short_issue\": \"Revoke or change access\",\n    \"short_resolution_or_hint\": \"Confirm access to remove or modify and get approval.\",\n    \"duplicate_count\": 98,\n    \"example_subjects\": [\"Access revocation request\"]\n  },\n  {\n    \"short_issue\": \"Exit or relieving document request\",\n    \"short_resolution_or_hint\": \"Check full and final process or pending clearance.\",\n    \"duplicate_count\": 96,\n    \"example_subjects\": [\"Relieving letter request\"]\n  },\n  {\n    \"short_issue\": \"Shift or roster issue\",\n    \"short_resolution_or_hint\": \"Check shift timing, schedule, or roster update.\",\n    \"duplicate_count\": 94,\n    \"example_subjects\": [\"Shift issue\"]\n  },\n  {\n    \"short_issue\": \"Office facility issue\",\n    \"short_resolution_or_hint\": \"Check office maintenance, seating, or facility support.\",\n    \"duplicate_count\": 93,\n    \"example_subjects\": [\"Office facility issue\"]\n  },\n  {\n    \"short_issue\": \"Printer or peripheral issue\",\n    \"short_resolution_or_hint\": \"Check device connection, driver, or replacement need.\",\n    \"duplicate_count\": 92,\n    \"example_subjects\": [\"Printer issue\"]\n  },\n  {\n    \"short_issue\": \"SIM or phone bill issue\",\n    \"short_resolution_or_hint\": \"Check corporate SIM activation, recharge, or billing.\",\n    \"duplicate_count\": 90,\n    \"example_subjects\": [\"SIM issue\"]\n  },\n  {\n    \"short_issue\": \"Software installation request\",\n    \"short_resolution_or_hint\": \"Confirm software name, license, and device details.\",\n    \"duplicate_count\": 88,\n    \"example_subjects\": [\"Software installation\"]\n  },\n  {\n    \"short_issue\": \"VPN or remote access issue\",\n    \"short_resolution_or_hint\": \"Check VPN setup, credentials, or network policy.\",\n    \"duplicate_count\": 87,\n    \"example_subjects\": [\"VPN issue\"]\n  },\n  {\n    \"short_issue\": \"Timesheet issue\",\n    \"short_resolution_or_hint\": \"Check missing entries, approval, or correction request.\",\n    \"duplicate_count\": 85,\n    \"example_subjects\": [\"Timesheet pending\"]\n  },\n  {\n    \"short_issue\": \"Offer letter or employment letter request\",\n    \"short_resolution_or_hint\": \"Check requested letter type and employee details.\",\n    \"duplicate_count\": 84,\n    \"example_subjects\": [\"Offer letter request\"]\n  },\n  {\n    \"short_issue\": \"Loan repayment issue\",\n    \"short_resolution_or_hint\": \"Check repayment posting, schedule, or mismatch.\",\n    \"duplicate_count\": 83,\n    \"example_subjects\": [\"Repayment issue\"]\n  },\n  {\n    \"short_issue\": \"Expense claim pending\",\n    \"short_resolution_or_hint\": \"Check submitted bills, approval stage, or finance hold.\",\n    \"duplicate_count\": 82,\n    \"example_subjects\": [\"Expense claim pending\"]\n  },\n  {\n    \"short_issue\": \"Internet reimbursement request\",\n    \"short_resolution_or_hint\": \"Check claim amount, bill upload, and policy.\",\n    \"duplicate_count\": 81,\n    \"example_subjects\": [\"Internet reimbursement\"]\n  },\n  {\n    \"short_issue\": \"New joiner account creation\",\n    \"short_resolution_or_hint\": \"Create email, portal, and tool access for new user.\",\n    \"duplicate_count\": 79,\n    \"example_subjects\": [\"New joiner access\"]\n  },\n  {\n    \"short_issue\": \"Background verification issue\",\n    \"short_resolution_or_hint\": \"Check pending documents or verifier response.\",\n    \"duplicate_count\": 78,\n    \"example_subjects\": [\"BGV issue\"]\n  },\n  {\n    \"short_issue\": \"Loan application status\",\n    \"short_resolution_or_hint\": \"Check current application stage and pending actions.\",\n    \"duplicate_count\": 77,\n    \"example_subjects\": [\"Application status\"]\n  },\n  {\n    \"short_issue\": \"Invoice payment follow-up\",\n    \"short_resolution_or_hint\": \"Verify due invoice, approval stage, and payment date.\",\n    \"duplicate_count\": 76,\n    \"example_subjects\": [\"Payment follow up\"]\n  },\n  {\n    \"short_issue\": \"Insurance card or policy copy request\",\n    \"short_resolution_or_hint\": \"Share policy copy, e-card, or enrollment details.\",\n    \"duplicate_count\": 75,\n    \"example_subjects\": [\"Insurance card request\"]\n  },\n  {\n    \"short_issue\": \"Change in employee personal details\",\n    \"short_resolution_or_hint\": \"Update name, address, phone, or other profile details.\",\n    \"duplicate_count\": 74,\n    \"example_subjects\": [\"Profile update request\"]\n  },\n  {\n    \"short_issue\": \"Salary structure clarification\",\n    \"short_resolution_or_hint\": \"Explain breakup, deductions, or variable pay details.\",\n    \"duplicate_count\": 73,\n    \"example_subjects\": [\"Salary breakup issue\"]\n  },\n  {\n    \"short_issue\": \"Asset return or collection request\",\n    \"short_resolution_or_hint\": \"Check pickup, return confirmation, or asset list.\",\n    \"duplicate_count\": 72,\n    \"example_subjects\": [\"Asset return\"]\n  },\n  {\n    \"short_issue\": \"Loan closure or NOC request\",\n    \"short_resolution_or_hint\": \"Check closure amount and share NOC or closure proof.\",\n    \"duplicate_count\": 71,\n    \"example_subjects\": [\"Loan closure request\"]\n  },\n  {\n    \"short_issue\": \"Printer toner or stationery request\",\n    \"short_resolution_or_hint\": \"Check consumable availability and office requirement.\",\n    \"duplicate_count\": 70,\n    \"example_subjects\": [\"Stationery request\"]\n  },\n  {\n    \"short_issue\": \"Work from home setup issue\",\n    \"short_resolution_or_hint\": \"Check access, device, or connectivity needed for WFH.\",\n    \"duplicate_count\": 69,\n    \"example_subjects\": [\"WFH issue\"]\n  },\n  {\n    \"short_issue\": \"Desktop setup or replacement request\",\n    \"short_resolution_or_hint\": \"Check hardware issue or need for new setup.\",\n    \"duplicate_count\": 68,\n    \"example_subjects\": [\"Desktop issue\"]\n  },\n  {\n    \"short_issue\": \"Repayment receipt or statement request\",\n    \"short_resolution_or_hint\": \"Share payment proof, statement, or ledger copy.\",\n    \"duplicate_count\": 67,\n    \"example_subjects\": [\"Repayment statement\"]\n  },\n  {\n    \"short_issue\": \"Meeting room or office booking issue\",\n    \"short_resolution_or_hint\": \"Check booking slot, approval, or facility availability.\",\n    \"duplicate_count\": 66,\n    \"example_subjects\": [\"Meeting room booking\"]\n  },\n  {\n    \"short_issue\": \"Employee code or ID issue\",\n    \"short_resolution_or_hint\": \"Verify employee record and correct code or mapping.\",\n    \"duplicate_count\": 65,\n    \"example_subjects\": [\"Employee ID issue\"]\n  },\n  {\n    \"short_issue\": \"MS Office or license issue\",\n    \"short_resolution_or_hint\": \"Check product activation, license, or reinstall need.\",\n    \"duplicate_count\": 64,\n    \"example_subjects\": [\"Office activation issue\"]\n  },\n  {\n    \"short_issue\": \"Loan sanction or approval letter request\",\n    \"short_resolution_or_hint\": \"Share sanction letter or confirm issuance status.\",\n    \"duplicate_count\": 63,\n    \"example_subjects\": [\"Sanction letter request\"]\n  },\n  {\n    \"short_issue\": \"Bank statement or proof request\",\n    \"short_resolution_or_hint\": \"Check requested period and share available statement.\",\n    \"duplicate_count\": 62,\n    \"example_subjects\": [\"Bank statement required\"]\n  },\n  {\n    \"short_issue\": \"Payroll correction request\",\n    \"short_resolution_or_hint\": \"Check payroll month, error type, and correction needed.\",\n    \"duplicate_count\": 61,\n    \"example_subjects\": [\"Payroll correction\"]\n  },\n  {\n    \"short_issue\": \"New hardware procurement request\",\n    \"short_resolution_or_hint\": \"Confirm item needed, purpose, and approval.\",\n    \"duplicate_count\": 60,\n    \"example_subjects\": [\"New laptop request\"]\n  },\n  {\n    \"short_issue\": \"Travel advance or settlement issue\",\n    \"short_resolution_or_hint\": \"Check travel advance, submitted bills, or settlement gap.\",\n    \"duplicate_count\": 59,\n    \"example_subjects\": [\"Travel settlement issue\"]\n  },\n  {\n    \"short_issue\": \"Browser or application crash issue\",\n    \"short_resolution_or_hint\": \"Check error pattern, browser version, and affected app.\",\n    \"duplicate_count\": 58,\n    \"example_subjects\": [\"App crashing\"]\n  },\n  {\n    \"short_issue\": \"Data correction in HR system\",\n    \"short_resolution_or_hint\": \"Verify current record and requested change.\",\n    \"duplicate_count\": 57,\n    \"example_subjects\": [\"HRMS correction\"]\n  },\n  {\n    \"short_issue\": \"Device handover for new joiner\",\n    \"short_resolution_or_hint\": \"Prepare and assign device for new employee.\",\n    \"duplicate_count\": 56,\n    \"example_subjects\": [\"Laptop for new joiner\"]\n  },\n  {\n    \"short_issue\": \"Late payment charge issue\",\n    \"short_resolution_or_hint\": \"Check due date, payment posting, and penalty details.\",\n    \"duplicate_count\": 55,\n    \"example_subjects\": [\"Late fee issue\"]\n  },\n  {\n    \"short_issue\": \"Access to folder, drive, or file\",\n    \"short_resolution_or_hint\": \"Grant file or drive access after approval.\",\n    \"duplicate_count\": 54,\n    \"example_subjects\": [\"Drive access request\"]\n  },\n  {\n    \"short_issue\": \"Offer acceptance or joining confirmation\",\n    \"short_resolution_or_hint\": \"Confirm joining details and update candidate status.\",\n    \"duplicate_count\": 53,\n    \"example_subjects\": [\"Joining confirmation\"]\n  },\n  {\n    \"short_issue\": \"Maternity, paternity, or special leave query\",\n    \"short_resolution_or_hint\": \"Check leave policy and applicable documents.\",\n    \"duplicate_count\": 52,\n    \"example_subjects\": [\"Special leave query\"]\n  },\n  {\n    \"short_issue\": \"Wi-Fi credentials or setup request\",\n    \"short_resolution_or_hint\": \"Share Wi-Fi details or configure access.\",\n    \"duplicate_count\": 51,\n    \"example_subjects\": [\"WiFi password\"]\n  },\n  {\n    \"short_issue\": \"Courier or dispatch issue\",\n    \"short_resolution_or_hint\": \"Check item dispatch, tracking, or delivery delay.\",\n    \"duplicate_count\": 50,\n    \"example_subjects\": [\"Courier pending\"]\n  },\n  {\n    \"short_issue\": \"Incorrect deduction from salary\",\n    \"short_resolution_or_hint\": \"Check payslip and identify wrong deduction item.\",\n    \"duplicate_count\": 49,\n    \"example_subjects\": [\"Wrong salary deduction\"]\n  },\n  {\n    \"short_issue\": \"Training, LMS, or course access issue\",\n    \"short_resolution_or_hint\": \"Check enrollment, login, or module access.\",\n    \"duplicate_count\": 48,\n    \"example_subjects\": [\"LMS access issue\"]\n  },\n  {\n    \"short_issue\": \"Biometric device issue\",\n    \"short_resolution_or_hint\": \"Check biometric registration or device sync.\",\n    \"duplicate_count\": 47,\n    \"example_subjects\": [\"Biometric issue\"]\n  },\n  {\n    \"short_issue\": \"KYC or document verification pending\",\n    \"short_resolution_or_hint\": \"Check missing KYC details or verification queue.\",\n    \"duplicate_count\": 46,\n    \"example_subjects\": [\"KYC pending\"]\n  },\n  {\n    \"short_issue\": \"Loan amount mismatch\",\n    \"short_resolution_or_hint\": \"Check approved amount, disbursed amount, or repayment data.\",\n    \"duplicate_count\": 45,\n    \"example_subjects\": [\"Amount mismatch\"]\n  },\n  {\n    \"short_issue\": \"Email group or distribution list request\",\n    \"short_resolution_or_hint\": \"Create or update mailing list members.\",\n    \"duplicate_count\": 44,\n    \"example_subjects\": [\"Distribution list request\"]\n  },\n  {\n    \"short_issue\": \"ERP or tool access issue\",\n    \"short_resolution_or_hint\": \"Check module permission, role mapping, or account setup.\",\n    \"duplicate_count\": 43,\n    \"example_subjects\": [\"ERP access issue\"]\n  },\n  {\n    \"short_issue\": \"Tax declaration update\",\n    \"short_resolution_or_hint\": \"Check declaration window, proof, or correction need.\",\n    \"duplicate_count\": 42,\n    \"example_subjects\": [\"Tax declaration issue\"]\n  },\n  {\n    \"short_issue\": \"Attendance not marked\",\n    \"short_resolution_or_hint\": \"Verify punch, shift, or sync issue in attendance system.\",\n    \"duplicate_count\": 41,\n    \"example_subjects\": [\"Attendance missing\"]\n  },\n  {\n    \"short_issue\": \"External vendor payment issue\",\n    \"short_resolution_or_hint\": \"Check PO, invoice, approval, or bank details.\",\n    \"duplicate_count\": 40,\n    \"example_subjects\": [\"Vendor payment pending\"]\n  },\n  {\n    \"short_issue\": \"Offer document correction\",\n    \"short_resolution_or_hint\": \"Check incorrect details and reissue document if needed.\",\n    \"duplicate_count\": 39,\n    \"example_subjects\": [\"Offer letter correction\"]\n  },\n  {\n    \"short_issue\": \"System performance slow\",\n    \"short_resolution_or_hint\": \"Check affected device, app, and recent system changes.\",\n    \"duplicate_count\": 38,\n    \"example_subjects\": [\"System slow\"]\n  },\n  {\n    \"short_issue\": \"Database or report access request\",\n    \"short_resolution_or_hint\": \"Grant report or data access after approval.\",\n    \"duplicate_count\": 37,\n    \"example_subjects\": [\"Report access request\"]\n  },\n  {\n    \"short_issue\": \"Emergency leave request\",\n    \"short_resolution_or_hint\": \"Check leave dates and notify approver if urgent.\",\n    \"duplicate_count\": 36,\n    \"example_subjects\": [\"Emergency leave\"]\n  },\n  {\n    \"short_issue\": \"Claim rejected or returned\",\n    \"short_resolution_or_hint\": \"Check rejection reason and missing details.\",\n    \"duplicate_count\": 35,\n    \"example_subjects\": [\"Claim rejected\"]\n  },\n  {\n    \"short_issue\": \"Laptop battery or charger issue\",\n    \"short_resolution_or_hint\": \"Inspect power issue and arrange repair or replacement.\",\n    \"duplicate_count\": 34,\n    \"example_subjects\": [\"Laptop charger not working\"]\n  },\n  {\n    \"short_issue\": \"Loan statement request\",\n    \"short_resolution_or_hint\": \"Share statement for requested period.\",\n    \"duplicate_count\": 33,\n    \"example_subjects\": [\"Loan statement required\"]\n  },\n  {\n    \"short_issue\": \"GST or PAN detail correction\",\n    \"short_resolution_or_hint\": \"Verify tax details and update incorrect record.\",\n    \"duplicate_count\": 32,\n    \"example_subjects\": [\"PAN correction\"]\n  },\n  {\n    \"short_issue\": \"Ticket follow-up or no response\",\n    \"short_resolution_or_hint\": \"Check ticket age and escalate if pending too long.\",\n    \"duplicate_count\": 31,\n    \"example_subjects\": [\"No response on ticket\"]\n  },\n  {\n    \"short_issue\": \"Office pass or visitor pass issue\",\n    \"short_resolution_or_hint\": \"Check pass request, validity, or access zone.\",\n    \"duplicate_count\": 30,\n    \"example_subjects\": [\"Visitor pass request\"]\n  },\n  {\n    \"short_issue\": \"Payroll bank transfer failed\",\n    \"short_resolution_or_hint\": \"Check account details and failed transfer reason.\",\n    \"duplicate_count\": 29,\n    \"example_subjects\": [\"Salary not credited\"]\n  },\n  {\n    \"short_issue\": \"Meeting invite or calendar issue\",\n    \"short_resolution_or_hint\": \"Check calendar access, invite, or schedule conflict.\",\n    \"duplicate_count\": 28,\n    \"example_subjects\": [\"Calendar issue\"]\n  },\n  {\n    \"short_issue\": \"Mobile app login issue\",\n    \"short_resolution_or_hint\": \"Verify app credentials, OTP, or device compatibility.\",\n    \"duplicate_count\": 27,\n    \"example_subjects\": [\"App login issue\"]\n  },\n  {\n    \"short_issue\": \"Resignation or notice period query\",\n    \"short_resolution_or_hint\": \"Check resignation steps, policy, or notice period terms.\",\n    \"duplicate_count\": 26,\n    \"example_subjects\": [\"Resignation query\"]\n  },\n  {\n    \"short_issue\": \"Desktop software not opening\",\n    \"short_resolution_or_hint\": \"Check installation, permissions, or compatibility issue.\",\n    \"duplicate_count\": 25,\n    \"example_subjects\": [\"Software not opening\"]\n  },\n  {\n    \"short_issue\": \"Insurance enrollment or addition request\",\n    \"short_resolution_or_hint\": \"Check enrollment window and required dependent details.\",\n    \"duplicate_count\": 24,\n    \"example_subjects\": [\"Insurance enrollment\"]\n  },\n  {\n    \"short_issue\": \"Travel booking request\",\n    \"short_resolution_or_hint\": \"Confirm route, dates, and approval details.\",\n    \"duplicate_count\": 23,\n    \"example_subjects\": [\"Travel booking\"]\n  },\n  {\n    \"short_issue\": \"Headset, keyboard, or accessory issue\",\n    \"short_resolution_or_hint\": \"Check malfunction and replace if required.\",\n    \"duplicate_count\": 22,\n    \"example_subjects\": [\"Keyboard not working\"]\n  },\n  {\n    \"short_issue\": \"Attendance policy clarification\",\n    \"short_resolution_or_hint\": \"Explain policy for punch, shift, or leave rules.\",\n    \"duplicate_count\": 21,\n    \"example_subjects\": [\"Attendance policy query\"]\n  },\n  {\n    \"short_issue\": \"Wrong employee mapping or manager change\",\n    \"short_resolution_or_hint\": \"Update reporting manager or org mapping.\",\n    \"duplicate_count\": 20,\n    \"example_subjects\": [\"Manager change request\"]\n  },\n  {\n    \"short_issue\": \"Joining kit or welcome mail missing\",\n    \"short_resolution_or_hint\": \"Check onboarding mail and required welcome assets.\",\n    \"duplicate_count\": 19,\n    \"example_subjects\": [\"Welcome mail not received\"]\n  },\n  {\n    \"short_issue\": \"System-generated ticket notification\",\n    \"short_resolution_or_hint\": \"\",\n    \"duplicate_count\": 18,\n    \"example_subjects\": [\"Your ticket has been created\"]\n  },\n  {\n    \"short_issue\": \"Laptop formatting or cleanup request\",\n    \"short_resolution_or_hint\": \"Check backup need before formatting or cleanup.\",\n    \"duplicate_count\": 18,\n    \"example_subjects\": [\"System formatting request\"]\n  },\n  {\n    \"short_issue\": \"Travel reimbursement pending\",\n    \"short_resolution_or_hint\": \"Check submitted tickets, approval, and payment status.\",\n    \"duplicate_count\": 17,\n    \"example_subjects\": [\"Travel reimbursement pending\"]\n  },\n  {\n    \"short_issue\": \"Health checkup or wellness benefit issue\",\n    \"short_resolution_or_hint\": \"Check benefit eligibility and booking process.\",\n    \"duplicate_count\": 17,\n    \"example_subjects\": [\"Health benefit query\"]\n  },\n  {\n    \"short_issue\": \"Probation confirmation request\",\n    \"short_resolution_or_hint\": \"Check confirmation date and manager approval.\",\n    \"duplicate_count\": 16,\n    \"example_subjects\": [\"Probation confirmation\"]\n  },\n  {\n    \"short_issue\": \"Tax proof submission issue\",\n    \"short_resolution_or_hint\": \"Check required proof and submission portal status.\",\n    \"duplicate_count\": 16,\n    \"example_subjects\": [\"Tax proof submission\"]\n  },\n  {\n    \"short_issue\": \"Bill upload failed\",\n    \"short_resolution_or_hint\": \"Check file format, size, or portal error.\",\n    \"duplicate_count\": 15,\n    \"example_subjects\": [\"Bill upload issue\"]\n  },\n  {\n    \"short_issue\": \"Asset stock not available\",\n    \"short_resolution_or_hint\": \"Check replacement ETA or alternate arrangement.\",\n    \"duplicate_count\": 15,\n    \"example_subjects\": [\"Laptop stock unavailable\"]\n  },\n  {\n    \"short_issue\": \"Loan EMI schedule clarification\",\n    \"short_resolution_or_hint\": \"Explain EMI amount, dates, or tenure details.\",\n    \"duplicate_count\": 14,\n    \"example_subjects\": [\"EMI schedule query\"]\n  },\n  {\n    \"short_issue\": \"Seat allocation or workstation request\",\n    \"short_resolution_or_hint\": \"Check seating plan and assign available desk.\",\n    \"duplicate_count\": 14,\n    \"example_subjects\": [\"Seat allocation\"]\n  },\n  {\n    \"short_issue\": \"Claim document missing\",\n    \"short_resolution_or_hint\": \"Identify missing document and request resubmission.\",\n    \"duplicate_count\": 13,\n    \"example_subjects\": [\"Missing claim documents\"]\n  },\n  {\n    \"short_issue\": \"Work anniversary or service letter request\",\n    \"short_resolution_or_hint\": \"Share requested service or tenure confirmation letter.\",\n    \"duplicate_count\": 13,\n    \"example_subjects\": [\"Service letter request\"]\n  },\n  {\n    \"short_issue\": \"Email alias or signature update\",\n    \"short_resolution_or_hint\": \"Update alias, signature, or sender settings.\",\n    \"duplicate_count\": 12,\n    \"example_subjects\": [\"Email signature update\"]\n  },\n  {\n    \"short_issue\": \"Loan repayment posting delay\",\n    \"short_resolution_or_hint\": \"Check payment date, UTR, and ledger update delay.\",\n    \"duplicate_count\": 12,\n    \"example_subjects\": [\"Repayment not updated\"]\n  },\n  {\n    \"short_issue\": \"Insurance premium deduction issue\",\n    \"short_resolution_or_hint\": \"Check enrolled plan and premium deduction entry.\",\n    \"duplicate_count\": 11,\n    \"example_subjects\": [\"Insurance deduction issue\"]\n  },\n  {\n    \"short_issue\": \"Old asset pickup pending\",\n    \"short_resolution_or_hint\": \"Schedule pickup and confirm return status.\",\n    \"duplicate_count\": 11,\n    \"example_subjects\": [\"Asset pickup pending\"]\n  },\n  {\n    \"short_issue\": \"Wrong or missing UTR\",\n    \"short_resolution_or_hint\": \"Verify payment reference and update missing UTR.\",\n    \"duplicate_count\": 10,\n    \"example_subjects\": [\"UTR missing\"]\n  },\n  {\n    \"short_issue\": \"Loan rejection clarification\",\n    \"short_resolution_or_hint\": \"Check rejection reason and share next step if available.\",\n    \"duplicate_count\": 10,\n    \"example_subjects\": [\"Loan rejected\"]\n  },\n  {\n    \"short_issue\": \"Policy document request\",\n    \"short_resolution_or_hint\": \"Share requested HR, IT, or finance policy copy.\",\n    \"duplicate_count\": 10,\n    \"example_subjects\": [\"Policy copy required\"]\n  },\n  {\n    \"short_issue\": \"Document not opening or corrupted\",\n    \"short_resolution_or_hint\": \"Check file version, format, or resend document.\",\n    \"duplicate_count\": 9,\n    \"example_subjects\": [\"File not opening\"]\n  },\n  {\n    \"short_issue\": \"Mobile reimbursement issue\",\n    \"short_resolution_or_hint\": \"Check bill submission and eligible amount.\",\n    \"duplicate_count\": 9,\n    \"example_subjects\": [\"Mobile bill reimbursement\"]\n  },\n  {\n    \"short_issue\": \"Recruitment portal or candidate issue\",\n    \"short_resolution_or_hint\": \"Check candidate record, stage, or portal access.\",\n    \"duplicate_count\": 9,\n    \"example_subjects\": [\"Hiring portal issue\"]\n  },\n  {\n    \"short_issue\": \"Exit clearance pending\",\n    \"short_resolution_or_hint\": \"Check pending approvals or unreturned assets.\",\n    \"duplicate_count\": 8,\n    \"example_subjects\": [\"Exit clearance pending\"]\n  },\n  {\n    \"short_issue\": \"Medical certificate or sick leave proof query\",\n    \"short_resolution_or_hint\": \"Check proof requirement and leave application status.\",\n    \"duplicate_count\": 8,\n    \"example_subjects\": [\"Sick leave proof\"]\n  },\n  {\n    \"short_issue\": \"Tool license renewal request\",\n    \"short_resolution_or_hint\": \"Check expiring license and renewal approval.\",\n    \"duplicate_count\": 8,\n    \"example_subjects\": [\"License renewal\"]\n  },\n  {\n    \"short_issue\": \"VPN installation or client setup help\",\n    \"short_resolution_or_hint\": \"Share setup steps and verify credentials.\",\n    \"duplicate_count\": 8,\n    \"example_subjects\": [\"VPN setup\"]\n  },\n  {\n    \"short_issue\": \"Wrong invoice amount\",\n    \"short_resolution_or_hint\": \"Check invoice values and correct mismatch.\",\n    \"duplicate_count\": 7,\n    \"example_subjects\": [\"Invoice amount mismatch\"]\n  },\n  {\n    \"short_issue\": \"Job title or designation correction\",\n    \"short_resolution_or_hint\": \"Update incorrect title in records or documents.\",\n    \"duplicate_count\": 7,\n    \"example_subjects\": [\"Designation correction\"]\n  },\n  {\n    \"short_issue\": \"PAN, Aadhaar, or ID proof issue\",\n    \"short_resolution_or_hint\": \"Check uploaded proof and required correction.\",\n    \"duplicate_count\": 7,\n    \"example_subjects\": [\"Aadhaar update\"]\n  },\n  {\n    \"short_issue\": \"Forgotten PIN or MFA issue\",\n    \"short_resolution_or_hint\": \"Reset PIN or reconfigure multi-factor authentication.\",\n    \"duplicate_count\": 7,\n    \"example_subjects\": [\"MFA issue\"]\n  },\n  {\n    \"short_issue\": \"Expense policy clarification\",\n    \"short_resolution_or_hint\": \"Explain eligibility, limits, or required proofs.\",\n    \"duplicate_count\": 6,\n    \"example_subjects\": [\"Expense policy query\"]\n  },\n  {\n    \"short_issue\": \"Loan top-up or enhancement request\",\n    \"short_resolution_or_hint\": \"Check eligibility and required application step.\",\n    \"duplicate_count\": 6,\n    \"example_subjects\": [\"Loan top up request\"]\n  },\n  {\n    \"short_issue\": \"Change in work location or transfer request\",\n    \"short_resolution_or_hint\": \"Check request details and needed approvals.\",\n    \"duplicate_count\": 6,\n    \"example_subjects\": [\"Location transfer request\"]\n  },\n  {\n    \"short_issue\": \"Corporate card issue\",\n    \"short_resolution_or_hint\": \"Check card request, limit, or payment issue.\",\n    \"duplicate_count\": 6,\n    \"example_subjects\": [\"Corporate card issue\"]\n  },\n  {\n    \"short_issue\": \"Relocation or moving support query\",\n    \"short_resolution_or_hint\": \"Check relocation policy and reimbursement support.\",\n    \"duplicate_count\": 6,\n    \"example_subjects\": [\"Relocation query\"]\n  },\n  {\n    \"short_issue\": \"Tax regime change request\",\n    \"short_resolution_or_hint\": \"Check allowed change window and payroll update.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Tax regime change\"]\n  },\n  {\n    \"short_issue\": \"Access to meeting link or call issue\",\n    \"short_resolution_or_hint\": \"Share correct link or verify invite permissions.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Meeting link not working\"]\n  },\n  {\n    \"short_issue\": \"Emergency contact or family detail update\",\n    \"short_resolution_or_hint\": \"Update dependent or emergency contact details.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Emergency contact update\"]\n  },\n  {\n    \"short_issue\": \"Performance review or appraisal query\",\n    \"short_resolution_or_hint\": \"Check appraisal cycle, status, or review form.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Appraisal query\"]\n  },\n  {\n    \"short_issue\": \"Travel policy clarification\",\n    \"short_resolution_or_hint\": \"Explain booking, reimbursement, or approval rules.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Travel policy query\"]\n  },\n  {\n    \"short_issue\": \"Loan foreclosure amount request\",\n    \"short_resolution_or_hint\": \"Share foreclosure dues and next closure step.\",\n    \"duplicate_count\": 5,\n    \"example_subjects\": [\"Foreclosure amount\"]\n  },\n  {\n    \"short_issue\": \"Wrong branch or entity selected\",\n    \"short_resolution_or_hint\": \"Correct branch, company, or office mapping.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"Wrong branch mapping\"]\n  },\n  {\n    \"short_issue\": \"Stationery or office supply request\",\n    \"short_resolution_or_hint\": \"Arrange requested office items if approved.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"Office supply request\"]\n  },\n  {\n    \"short_issue\": \"Software license exhausted\",\n    \"short_resolution_or_hint\": \"Check available seats or request new license.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"License seats full\"]\n  },\n  {\n    \"short_issue\": \"Loan auto-debit or NACH issue\",\n    \"short_resolution_or_hint\": \"Check mandate status, bank response, or retry.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"NACH issue\"]\n  },\n  {\n    \"short_issue\": \"Reissue employee letter\",\n    \"short_resolution_or_hint\": \"Regenerate document with corrected details.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"Reissue letter\"]\n  },\n  {\n    \"short_issue\": \"Workday, HRMS, or portal training help\",\n    \"short_resolution_or_hint\": \"Share steps or guide for using the system.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"HRMS help\"]\n  },\n  {\n    \"short_issue\": \"Missed reimbursement cycle\",\n    \"short_resolution_or_hint\": \"Check cutoff date and next processing cycle.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"Missed reimbursement cycle\"]\n  },\n  {\n    \"short_issue\": \"Asset damage reported\",\n    \"short_resolution_or_hint\": \"Check damage details and arrange inspection.\",\n    \"duplicate_count\": 4,\n    \"example_subjects\": [\"Damaged laptop\"]\n  },\n  {\n    \"short_issue\": \"Duplicate deduction or double payment issue\",\n    \"short_resolution_or_hint\": \"Check duplicate transaction and adjust if needed.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Double deduction\"]\n  },\n  {\n    \"short_issue\": \"Replacement SIM or number change\",\n    \"short_resolution_or_hint\": \"Verify user details and issue replacement request.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"SIM replacement\"]\n  },\n  {\n    \"short_issue\": \"Holiday calendar request\",\n    \"short_resolution_or_hint\": \"Share holiday list for requested office or year.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Holiday calendar\"]\n  },\n  {\n    \"short_issue\": \"Delayed onboarding due to missing approval\",\n    \"short_resolution_or_hint\": \"Check pending owner and get required approval.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Onboarding delayed\"]\n  },\n  {\n    \"short_issue\": \"Medical reimbursement claim\",\n    \"short_resolution_or_hint\": \"Check eligible bills and claim submission steps.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Medical reimbursement\"]\n  },\n  {\n    \"short_issue\": \"Email bounce or delivery rejection\",\n    \"short_resolution_or_hint\": \"Check recipient address and email policy block.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Mail bounced\"]\n  },\n  {\n    \"short_issue\": \"Asset transfer to another user\",\n    \"short_resolution_or_hint\": \"Update asset ownership and handover records.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Asset transfer\"]\n  },\n  {\n    \"short_issue\": \"Wrong approver mapped\",\n    \"short_resolution_or_hint\": \"Correct approval chain or manager mapping.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Wrong approver\"]\n  },\n  {\n    \"short_issue\": \"Loan moratorium or deferment query\",\n    \"short_resolution_or_hint\": \"Check eligibility and available deferment options.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Moratorium request\"]\n  },\n  {\n    \"short_issue\": \"Chat, Teams, or collaboration tool issue\",\n    \"short_resolution_or_hint\": \"Check login, permissions, or app setup.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Teams issue\"]\n  },\n  {\n    \"short_issue\": \"Domain or website access blocked\",\n    \"short_resolution_or_hint\": \"Review access block and whitelist if approved.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Website blocked\"]\n  },\n  {\n    \"short_issue\": \"Salary revision or arrears query\",\n    \"short_resolution_or_hint\": \"Check revision month and arrears processing.\",\n    \"duplicate_count\": 3,\n    \"example_subjects\": [\"Salary arrears query\"]\n  },\n  {\n    \"short_issue\": \"Branch attendance device not syncing\",\n    \"short_resolution_or_hint\": \"Check device connection and sync logs.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Attendance machine issue\"]\n  },\n  {\n    \"short_issue\": \"Duplicate employee profile\",\n    \"short_resolution_or_hint\": \"Merge or deactivate extra profile after validation.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Duplicate employee ID\"]\n  },\n  {\n    \"short_issue\": \"Courier address change\",\n    \"short_resolution_or_hint\": \"Update delivery address before dispatch or reattempt.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Change courier address\"]\n  },\n  {\n    \"short_issue\": \"Broken screen or physical damage issue\",\n    \"short_resolution_or_hint\": \"Arrange inspection and repair or replacement.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Screen damaged\"]\n  },\n  {\n    \"short_issue\": \"Ineligible claim clarification\",\n    \"short_resolution_or_hint\": \"Explain why claim is not covered under policy.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Claim not eligible\"]\n  },\n  {\n    \"short_issue\": \"Wrong shift allowance or reimbursement\",\n    \"short_resolution_or_hint\": \"Check policy and payroll mapping for the shift.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Shift allowance missing\"]\n  },\n  {\n    \"short_issue\": \"Organization chart or hierarchy issue\",\n    \"short_resolution_or_hint\": \"Update reporting structure or org display.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Org chart issue\"]\n  },\n  {\n    \"short_issue\": \"Loan refund or excess payment issue\",\n    \"short_resolution_or_hint\": \"Verify excess amount and initiate refund if valid.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Excess payment refund\"]\n  },\n  {\n    \"short_issue\": \"Temporary access request\",\n    \"short_resolution_or_hint\": \"Grant time-bound access after approval.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Temporary access\"]\n  },\n  {\n    \"short_issue\": \"Intern or contractor onboarding issue\",\n    \"short_resolution_or_hint\": \"Check limited-access setup and onboarding documents.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Intern onboarding issue\"]\n  },\n  {\n    \"short_issue\": \"Account merged or wrong mailbox issue\",\n    \"short_resolution_or_hint\": \"Verify account mapping and restore correct mailbox.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Wrong mailbox\"]\n  },\n  {\n    \"short_issue\": \"Food, meal coupon, or cafeteria issue\",\n    \"short_resolution_or_hint\": \"Check meal policy, card, or vendor issue.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Meal coupon issue\"]\n  },\n  {\n    \"short_issue\": \"Gratuity or full and final settlement query\",\n    \"short_resolution_or_hint\": \"Check eligibility and settlement timeline.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"FnF query\"]\n  },\n  {\n    \"short_issue\": \"Timesheet submitted but not approved\",\n    \"short_resolution_or_hint\": \"Check approver and pending stage.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Timesheet not approved\"]\n  },\n  {\n    \"short_issue\": \"Remote desktop or server access issue\",\n    \"short_resolution_or_hint\": \"Check credentials, VPN, and server permissions.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Server access issue\"]\n  },\n  {\n    \"short_issue\": \"Project code or cost center issue\",\n    \"short_resolution_or_hint\": \"Update wrong cost center or project mapping.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Cost center correction\"]\n  },\n  {\n    \"short_issue\": \"Lost asset or missing device report\",\n    \"short_resolution_or_hint\": \"Record incident and start asset recovery process.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Lost laptop\"]\n  },\n  {\n    \"short_issue\": \"Guest Wi-Fi or temporary network access\",\n    \"short_resolution_or_hint\": \"Share guest access details if approved.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Guest WiFi\"]\n  },\n  {\n    \"short_issue\": \"Address proof or employment proof request\",\n    \"short_resolution_or_hint\": \"Share requested verification letter or document.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Employment proof\"]\n  },\n  {\n    \"short_issue\": \"Keyboard layout or language setting issue\",\n    \"short_resolution_or_hint\": \"Update input settings or regional configuration.\",\n    \"duplicate_count\": 2,\n    \"example_subjects\": [\"Keyboard language issue\"]\n  },\n  {\n    \"short_issue\": \"Location-specific holiday mismatch\",\n    \"short_resolution_or_hint\": \"Check office mapping and holiday calendar.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Holiday mismatch\"]\n  },\n  {\n    \"short_issue\": \"Monitor or display cable issue\",\n    \"short_resolution_or_hint\": \"Check cable, adapter, or monitor replacement need.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Monitor issue\"]\n  },\n  {\n    \"short_issue\": \"Document e-sign or signing issue\",\n    \"short_resolution_or_hint\": \"Check signer access, workflow, or file status.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"E-sign issue\"]\n  },\n  {\n    \"short_issue\": \"Printer access permissions missing\",\n    \"short_resolution_or_hint\": \"Grant print server or device permissions.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Printer access denied\"]\n  },\n  {\n    \"short_issue\": \"Loan customer name mismatch\",\n    \"short_resolution_or_hint\": \"Verify ID proof and correct customer record.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Name mismatch in loan\"]\n  },\n  {\n    \"short_issue\": \"Old email ID still active\",\n    \"short_resolution_or_hint\": \"Disable unused email and update active mailbox.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Old email active\"]\n  },\n  {\n    \"short_issue\": \"Approval mail not received\",\n    \"short_resolution_or_hint\": \"Check approver mapping and email delivery.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Approval mail missing\"]\n  },\n  {\n    \"short_issue\": \"Asset tag or serial number missing\",\n    \"short_resolution_or_hint\": \"Update asset inventory with correct tag details.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Asset tag missing\"]\n  },\n  {\n    \"short_issue\": \"Unable to submit form\",\n    \"short_resolution_or_hint\": \"Check mandatory fields, validation error, or access.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Form submission failed\"]\n  },\n  {\n    \"short_issue\": \"Late joining reimbursement or claim\",\n    \"short_resolution_or_hint\": \"Check eligibility window and late submission reason.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Late claim submission\"]\n  },\n  {\n    \"short_issue\": \"Tax deducted for wrong state or location\",\n    \"short_resolution_or_hint\": \"Check payroll location mapping and tax setup.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Wrong PT deduction\"]\n  },\n  {\n    \"short_issue\": \"Meeting room equipment issue\",\n    \"short_resolution_or_hint\": \"Check projector, screen, or conferencing device.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Projector not working\"]\n  },\n  {\n    \"short_issue\": \"Duplicate reimbursement submission\",\n    \"short_resolution_or_hint\": \"Check duplicate request and keep valid one.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Duplicate reimbursement\"]\n  },\n  {\n    \"short_issue\": \"Unable to generate report or export data\",\n    \"short_resolution_or_hint\": \"Check report permissions, filters, or export bug.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Export issue\"]\n  },\n  {\n    \"short_issue\": \"Candidate offer release delayed\",\n    \"short_resolution_or_hint\": \"Check pending approval or missing details.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Offer release delayed\"]\n  },\n  {\n    \"short_issue\": \"Loan due date clarification\",\n    \"short_resolution_or_hint\": \"Confirm EMI due date and repayment schedule.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"EMI due date query\"]\n  },\n  {\n    \"short_issue\": \"Laptop webcam or microphone issue\",\n    \"short_resolution_or_hint\": \"Check drivers, permissions, or hardware fault.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Mic not working\"]\n  },\n  {\n    \"short_issue\": \"Corporate email setup on mobile\",\n    \"short_resolution_or_hint\": \"Configure account and verify security requirements.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Email setup on phone\"]\n  },\n  {\n    \"short_issue\": \"Shift transport route issue\",\n    \"short_resolution_or_hint\": \"Check route, pickup point, or transport mapping.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Cab route issue\"]\n  },\n  {\n    \"short_issue\": \"Mismatch in leave balance\",\n    \"short_resolution_or_hint\": \"Recalculate leave credits and previous usage.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Leave balance mismatch\"]\n  },\n  {\n    \"short_issue\": \"Claim processed for wrong amount\",\n    \"short_resolution_or_hint\": \"Check approved amount and reimbursement calculation.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Wrong claim amount\"]\n  },\n  {\n    \"short_issue\": \"Rehiring or rejoining profile issue\",\n    \"short_resolution_or_hint\": \"Restore old record or create correct new profile.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"Rejoiner profile issue\"]\n  },\n  {\n    \"short_issue\": \"Access request form response\",\n    \"short_resolution_or_hint\": \"Review submitted access form and process request.\",\n    \"duplicate_count\": 1,\n    \"example_subjects\": [\"New response for Access Rights Request Form\"]\n  }\n  // paste the rest of your KB entries here\n];\n\nreturn [\n  {\n    json: {\n      kb: kb\n    }\n  }\n];\n// // match using category against short_issue\n// const solution =\n//   kb.find(entry =>\n//     (entry.short_issue || \"\").toLowerCase().trim() ===\n//     (item.category || \"\").toLowerCase().trim()\n//   ) || null;\n\n// return [\n//   {\n//     json: {\n//       ...item,\n//       response: solution,\n//       kb_found: solution !== null\n//     }\n//   }\n// ];"
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Build Conversation Context').item.json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
             },
-            "id": "6f12c82c-5be4-4eb1-84b3-fbb0524d49ea",
-            "name": "KB Lookup",
+            "id": "6a3681c0-0b96-4809-9a84-c0999429b744",
+            "name": "Parse Intent",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -272,
-                688
+                -480,
+                3920
             ]
         },
         {
             "parameters": {
-                "mode": "combine",
-                "combineBy": "combineAll",
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.parsed_intent.intent }}",
+                            "rightValue": "greeting",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            },
+                            "id": "9269ef80-028f-4b43-bf8b-eff009425456"
+                        }
+                    ],
+                    "combinator": "and"
+                },
                 "options": {}
             },
-            "type": "n8n-nodes-base.merge",
-            "typeVersion": 3.2,
+            "id": "bfc63e0f-0894-49c9-a011-cd321fe34c3d",
+            "name": "Is Greeting?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
             "position": [
-                -48,
-                496
-            ],
-            "id": "335efecf-9845-486c-810d-099305a022f9",
-            "name": "Merge"
+                -256,
+                3920
+            ]
         },
         {
             "parameters": {
-                "jsCode": "const raw = $input.first().json.content.parts[0].text;\n\nlet cleaned = raw\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\n\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    matched_issue: \"parse_error\",\n    short_resolution_or_hint: cleaned,\n    confidence: \"0\",\n    needs_ticket: true\n  };\n}\n\nreturn [\n  {\n    json: {\n      ...$input.first().json,\n      parsed_response: parsed\n    }\n  }\n];"
+                "jsCode": "const reply = $json.parsed_intent?.direct_reply || 'Hi! How can I help you today?';\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    final_category: 'greeting',\n    apiPayload: {\n      response: reply,\n      sender: 'AI Assistant',\n      category: 'greeting',\n      originalMessageId: $json.messageId || ''\n    }\n  }\n}];"
             },
+            "id": "4c21de75-af3d-4cd1-8be5-d683da543237",
+            "name": "Prepare Greeting Response",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                528,
-                496
-            ],
-            "id": "1fa15401-2aea-493c-a648-34ec1d2cd78f",
-            "name": "ParseText"
+                -32,
+                3728
+            ]
         },
         {
             "parameters": {
@@ -347,16 +251,439 @@
                 "url": "http://172.17.0.1:8000/api/send-response",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"response\": \"{{ 'Your issue has been logged and a support ticket has been created. Ticket ID: ' + $json.ticket_id + ' .Our team will contact you shortly.' }}\",\n  \"sender\": \"AI Assistant\",\n  \"category\": \"{{ $('Prepare Ticket Response1').item.json.parsed_response.matched_issue || '' }}\"\n}",
+                "jsonBody": "={{ $json.apiPayload }}",
                 "options": {}
             },
-            "id": "3c0eebae-2ebd-433e-934e-a61e11cb6ad6",
-            "name": "Send Response",
+            "id": "a9025dee-69a1-4967-afb2-084b437e6c28",
+            "name": "Send Greeting Response",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1424,
-                592
+                192,
+                3632
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    sessionId: $json.sessionId,\n    user_message: $json.message,\n    assistant_message: $json.final_response_text,\n    intent: $json.parsed_intent?.intent || 'greeting',\n    matched_issue: $json.final_category || 'greeting',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "id": "d508e4f4-9c0b-4001-af76-bc3cfd1925e8",
+            "name": "Prepare Greeting Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                192,
+                3824
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "e90e9bcb-2826-4b97-8ccf-e34896ef3267",
+            "name": "Save Greeting Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                480,
+                3824
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const item = $input.first().json;\n\nconst kb = [\n  {\n    short_issue: '404 Not Found',\n    short_resolution_or_hint: 'The requested resource or endpoint does not exist. Verify the URL or webhook path.',\n    example_subjects: ['Webhook not registered', 'API endpoint not found']\n  },\n  {\n    short_issue: '401 Unauthorized',\n    short_resolution_or_hint: 'Authentication failed. Check API keys, tokens, or login credentials.',\n    example_subjects: ['Invalid API token']\n  },\n  {\n    short_issue: '403 Forbidden',\n    short_resolution_or_hint: 'Access to the resource is denied. Ensure proper permissions are granted.',\n    example_subjects: ['Permission denied']\n  },\n  {\n    short_issue: '500 Internal Server Error',\n    short_resolution_or_hint: 'The server encountered an unexpected condition. Check backend logs for details.',\n    example_subjects: ['Server crashed while processing request']\n  },\n  {\n    short_issue: '503 Service Unavailable',\n    short_resolution_or_hint: 'The service is temporarily unavailable due to overload or maintenance. Retry later.',\n    example_subjects: ['Service temporarily unavailable']\n  },\n  {\n    short_issue: 'Payment or invoice issue',\n    short_resolution_or_hint: 'Check invoice upload, payment status, approval stage, or missing UTR.',\n    example_subjects: ['Payment pending', 'Invoice issue']\n  },\n  {\n    short_issue: 'System access not working',\n    short_resolution_or_hint: 'Verify login rights, reset password, or enable the account.',\n    example_subjects: ['Unable to login']\n  },\n  {\n    short_issue: 'Bank account or IFSC update',\n    short_resolution_or_hint: 'Verify bank details and update the account number or IFSC correctly.',\n    example_subjects: ['Bank details update']\n  },\n  {\n    short_issue: 'Loan disbursement pending',\n    short_resolution_or_hint: 'Check the disbursement stage, bank validation, or pending borrower action.',\n    example_subjects: ['Disbursement pending']\n  },\n  {\n    short_issue: 'Ticket follow-up or no response',\n    short_resolution_or_hint: 'Check ticket age and escalate if it has been pending too long.',\n    example_subjects: ['No response on ticket']\n  },\n  {\n    short_issue: 'Password reset request',\n    short_resolution_or_hint: 'Reset the password or follow the account recovery flow.',\n    example_subjects: ['Password reset']\n  },\n  {\n    short_issue: 'App or portal bug',\n    short_resolution_or_hint: 'Check the affected page, error pattern, browser, and recent changes.',\n    example_subjects: ['Portal issue']\n  },\n  {\n    short_issue: 'Unable to submit form',\n    short_resolution_or_hint: 'Check mandatory fields, validation errors, session expiry, or access rights.',\n    example_subjects: ['Form submission failed']\n  },\n  {\n    short_issue: 'Document not opening or corrupted',\n    short_resolution_or_hint: 'Check the file format/version or ask for the document to be resent.',\n    example_subjects: ['File not opening']\n  },\n  {\n    short_issue: 'Meeting link not working',\n    short_resolution_or_hint: 'Verify the meeting link, invite permissions, and the correct signed-in account.',\n    example_subjects: ['Meeting link issue']\n  }\n];\n\nreturn [{\n  json: {\n    ...item,\n    kb\n  }\n}];"
+            },
+            "id": "ccb34f96-5765-4d56-8ab1-b4df2ac190cb",
+            "name": "KB Lookup",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                192,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "models/gemini-3-flash-preview",
+                    "mode": "list",
+                    "cachedResultName": "models/gemini-3-flash-preview"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "=You are a support issue matcher.\n\nUser issue:\n{{ $json.message }}\n\nNormalized user need:\n{{ $json.parsed_intent.normalized_user_need }}\n\nDetected intent:\n{{ $json.parsed_intent.intent }}\n\nPossible error code:\n{{ $json.parsed_intent.error_code || $json.possibleErrorCode || '' }}\n\nPrevious conversation:\n{{ JSON.stringify(($json.history || []).slice(-6)) }}\n\nKnowledge base:\n{{ JSON.stringify($json.kb) }}\n\nInstructions:\n- Match the user's issue to the closest KB entry by meaning.\n- Use previous conversation when the latest message is vague, such as 'same issue', 'still pending', or 'not resolved yet'.\n- If the user has an error code like 404/401/403/500/503, prioritize matching the corresponding KB error entry.\n- If the user is asking to contact support, talk to a human, escalate, or connect to a support person, return matched_issue as \"no_match\".\n- If the user asks for their ticket ID, do not invent one. Return matched_issue as \"no_match\" and leave ticket reuse to the workflow logic.\n- If there is no clear match, return matched_issue as \"no_match\".\n- Return JSON only.\n\nOutput format:\n{\n  \"matched_issue\": \"string\",\n  \"short_resolution_or_hint\": \"string\",\n  \"confidence\": 0.0,\n  \"needs_ticket\": false\n}"
+                        }
+                    ]
+                },
+                "builtInTools": {},
+                "options": {}
+            },
+            "id": "6a6623ef-a676-40ca-bce9-e92935384da1",
+            "name": "Issue Matcher",
+            "type": "@n8n/n8n-nodes-langchain.googleGemini",
+            "typeVersion": 1.1,
+            "position": [
+                416,
+                4016
+            ],
+            "credentials": {
+                "googlePalmApi": {
+                    "id": "VU4lYlt9NwCfUiPY",
+                    "name": "Google Gemini(PaLM) Api account 7"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('KB Lookup').item.json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    matched_issue: 'no_match',\n    short_resolution_or_hint: 'I could not confidently match this issue to the knowledge base.',\n    confidence: 0,\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_issue: parsed\n  }\n}];"
+            },
+            "id": "335c1c34-3baa-43fb-b1b3-9a9c004dce13",
+            "name": "Parse Issue Match",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                768,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": false,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 2
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.parsed_issue.matched_issue }}",
+                            "rightValue": "no_match",
+                            "operator": {
+                                "type": "string",
+                                "operation": "notEquals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "b9b9dee3-1f32-4e27-9e51-8029f7302209",
+            "name": "Matched KB?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                992,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\n\nlet response = issue.short_resolution_or_hint || 'I found a likely match for your issue.';\n\nif (intent.intent === 'follow_up') {\n  response = `This looks like a follow-up to your earlier issue. ${response}`;\n}\n\nif (intent.needs_ocr) {\n  response += ' If the screenshot or PDF contains the main error, make sure it is clearly visible so OCR can be added later.';\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: issue.matched_issue || intent.intent || 'general_issue',\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: issue.matched_issue || intent.intent || 'general_issue',\n      originalMessageId: $json.messageId || ''\n    }\n  }\n}];"
+            },
+            "id": "362b7eb0-8229-4a24-8bb3-8a6324dcdd8c",
+            "name": "Prepare KB Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1216,
+                3920
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "77c2ecbb-e4c9-419a-9f4c-839de22c575c",
+            "name": "Send KB Response",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1440,
+                3824
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    sessionId: $json.sessionId,\n    user_message: $json.message,\n    assistant_message: $json.final_response_text,\n    intent: $json.parsed_intent?.intent || 'general_issue',\n    matched_issue: $json.final_category || $json.parsed_issue?.matched_issue || 'general_issue',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "id": "3206f76f-6053-4135-a8a1-ee5aff2f4a26",
+            "name": "Prepare KB Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1440,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "4e6af145-d9cd-4de0-8b5c-da97c168af2e",
+            "name": "Save KB Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1664,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\nconst message = ($json.message || '').toLowerCase().trim();\nconst existingTicketId = $json.latest_ticket_id || null;\n\nconst wantsSupportPerson = /contact support|support person|human support|talk to support|connect me to support|connect to support|agent|human agent|representative|real person|customer care|escalate/i.test(message);\nconst asksForTicketId = /ticket id|existing ticket|my ticket|previous ticket|show ticket|ticket number/i.test(message);\n\nconst reuseExistingTicket =\n  !!existingTicketId &&\n  (\n    issue.matched_issue === 'no_match' ||\n    wantsSupportPerson ||\n    asksForTicketId\n  );\n\nreturn [{\n  json: {\n    ...$json,\n    sessionId: $json.sessionId,\n    reuse_existing_ticket: reuseExistingTicket,\n    existing_ticket_id: existingTicketId,\n    ticketPayload: {\n      ticket_title: intent.error_code\n        ? `Issue related to ${intent.error_code}`\n        : (\n            issue.matched_issue &&\n            issue.matched_issue !== 'no_match'\n              ? issue.matched_issue\n              : 'Manual support ticket'\n          ),\n      ticket_description:\n        intent.normalized_user_need ||\n        $json.message ||\n        'Manual support review needed',\n      category:\n        issue.matched_issue &&\n        issue.matched_issue !== 'no_match'\n          ? issue.matched_issue\n          : (intent.intent || 'general_issue'),\n      priority: intent.intent === 'error_code_issue' ? 'High' : 'Medium'\n    },\n    messageId: $json.messageId || '',\n    originalCategory:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n    originalMessage: $json.message,\n    originalIntent: intent.intent || 'general_issue'\n  }\n}];"
+            },
+            "id": "d75f1290-2990-40c1-acc8-15ce497135c2",
+            "name": "Prepare Ticket Payload",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1216,
+                4208
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.reuse_existing_ticket }}",
+                            "rightValue": true,
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "equals"
+                            },
+                            "id": "reuse-existing-ticket-condition"
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "reuse-existing-ticket-if-node",
+            "name": "Reuse Existing Ticket?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                1440,
+                4208
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ticketId = $json.existing_ticket_id;\n\nlet response = `You already have an active support ticket for this chat. Ticket ID: ${ticketId}. I have kept the same ticket open and your request will continue there.`;\n\nif (/ticket id|my ticket|existing ticket|ticket number/i.test(($json.originalMessage || '').toLowerCase())) {\n  response = `Your existing support ticket ID is ${ticketId}.`;\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: 'existing_ticket_reused',\n    final_ticket_id: ticketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: 'existing_ticket_reused',\n      originalMessageId: $json.messageId || ''\n    }\n  }\n}];"
+            },
+            "id": "prepare-existing-ticket-response-node",
+            "name": "Prepare Existing Ticket Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1664,
+                4112
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "send-existing-ticket-response-node",
+            "name": "Send Existing Ticket Response",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1888,
+                4016
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    sessionId: $json.sessionId,\n    user_message: $json.originalMessage || '',\n    assistant_message: $json.final_response_text,\n    intent: $json.originalIntent || 'general_issue',\n    matched_issue: 'existing_ticket_reused',\n    ticket_id: $json.final_ticket_id || $json.existing_ticket_id || null,\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "id": "prepare-existing-ticket-memory-node",
+            "name": "Prepare Existing Ticket Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1888,
+                4208
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "save-existing-ticket-memory-node",
+            "name": "Save Existing Ticket Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2112,
+                4208
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/tickets",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.ticketPayload }}",
+                "options": {}
+            },
+            "id": "814d61cc-6ed5-47b1-bc4c-f712a17e435c",
+            "name": "Create Ticket",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1664,
+                4400
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const data = $input.first().json;\nconst ticketId = data.ticket_id || data.id || 'generated';\nconst response = `I could not find a confident knowledge-base match, so I created a support ticket for you. Ticket ID: ${ticketId}. Our team will contact you shortly.`;\n\nreturn [{\n  json: {\n    ...data,\n    final_response_text: response,\n    final_category: data.originalCategory || 'manual_ticket',\n    final_ticket_id: ticketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: data.originalCategory || 'manual_ticket',\n      originalMessageId: data.messageId || ''\n    }\n  }\n}];"
+            },
+            "id": "47ddf440-e0c5-4df1-b8c1-b73c885c2743",
+            "name": "Prepare Ticket Ack",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1888,
+                4400
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "c3a72b6f-9364-4caf-b3b3-ba6af461ded1",
+            "name": "Send Ticket Ack",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2112,
+                4304
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const source = $('Prepare Ticket Ack').item.json;\nconst ticketSource = $('Prepare Ticket Payload').item.json;\n\nreturn [{\n  json: {\n    sessionId: ticketSource.sessionId,\n    user_message: ticketSource.originalMessage || '',\n    assistant_message: source.final_response_text,\n    intent: ticketSource.originalIntent || 'general_issue',\n    matched_issue: source.final_category || ticketSource.originalCategory || 'manual_ticket',\n    ticket_id: source.final_ticket_id || null,\n    messageId: ticketSource.messageId || ''\n  }\n}];"
+            },
+            "id": "4a0dc636-1530-4968-97e5-9079ee04f754",
+            "name": "Prepare Ticket Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                2112,
+                4496
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "19518be3-1531-42f0-aacd-f85abd69adc3",
+            "name": "Save Ticket Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2336,
+                4496
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "04bcd5e6-5a79-450c-b563-e1301a1f078c",
+                            "leftValue": "={{ ($json.parsed_intent.intent || '').trim().toLowerCase() }}",
+                            "rightValue": "gibberish",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -32,
+                4112
+            ],
+            "id": "ac0e6ee0-6329-4cb3-b2cc-c18e4de52e6e",
+            "name": "If"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ ({ \"message\": \"Couldn't understand the text kindly describe your issue again\" }) }}",
+                "options": {}
+            },
+            "id": "09aa3094-2411-41e0-9a5e-987bf1263d8d",
+            "name": "Send Empty Response1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                192,
+                4208
             ]
         }
     ],
@@ -369,11 +696,6 @@
                         "node": "Extract Message Data1",
                         "type": "main",
                         "index": 0
-                    },
-                    {
-                        "node": "KB Lookup",
-                        "type": "main",
-                        "index": 0
                     }
                 ]
             ]
@@ -382,145 +704,170 @@
             "main": [
                 [
                     {
-                        "node": "Route Input Type1",
+                        "node": "Normalize Input",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Merge Input + Memory",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Route Input Type1": {
+        "Normalize Input": {
             "main": [
                 [
                     {
-                        "node": "Is PDF?1",
+                        "node": "Load Memory",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Is PDF?1": {
+        "Load Memory": {
             "main": [
                 [
                     {
-                        "node": "Extract PDF Text1",
+                        "node": "Merge Input + Memory",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Merge Input + Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Build Conversation Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Conversation Context": {
+            "main": [
+                [
+                    {
+                        "node": "Empty Message?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Empty Message?": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Empty Response",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "Is Image?1",
+                        "node": "Intent Classifier",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Extract PDF Text1": {
+        "Prepare Empty Response": {
             "main": [
                 [
                     {
-                        "node": "PDF Text Found?1",
+                        "node": "Send Empty Response",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "PDF Text Found?1": {
+        "Intent Classifier": {
             "main": [
                 [
                     {
-                        "node": "Combine Text1",
+                        "node": "Parse Intent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Intent": {
+            "main": [
+                [
+                    {
+                        "node": "Is Greeting?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Greeting?": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Greeting Response",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "OCR PDF1",
+                        "node": "If",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "OCR PDF1": {
+        "Prepare Greeting Response": {
             "main": [
                 [
                     {
-                        "node": "Combine Text1",
+                        "node": "Send Greeting Response",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Greeting Memory",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Is Image?1": {
+        "Prepare Greeting Memory": {
             "main": [
                 [
                     {
-                        "node": "OCR Image1",
+                        "node": "Save Greeting Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "If": {
+            "main": [
+                [
+                    {
+                        "node": "Send Empty Response1",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "Combine Text1",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "OCR Image1": {
-            "main": [
-                [
-                    {
-                        "node": "Combine Text1",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Prepare Ticket Response1": {
-            "main": [
-                [
-                    {
-                        "node": "Send Response2",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Satisfactory answer?": {
-            "main": [
-                [
-                    {
-                        "node": "Send Response1",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
-                [
-                    {
-                        "node": "Prepare Ticket Response1",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Combine Text1": {
-            "main": [
-                [
-                    {
-                        "node": "Merge",
+                        "node": "KB Lookup",
                         "type": "main",
                         "index": 0
                     }
@@ -531,51 +878,168 @@
             "main": [
                 [
                     {
-                        "node": "Merge",
-                        "type": "main",
-                        "index": 1
-                    }
-                ]
-            ]
-        },
-        "Message a model": {
-            "main": [
-                [
-                    {
-                        "node": "ParseText",
+                        "node": "Issue Matcher",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Merge": {
+        "Issue Matcher": {
             "main": [
                 [
                     {
-                        "node": "Message a model",
+                        "node": "Parse Issue Match",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "ParseText": {
+        "Parse Issue Match": {
             "main": [
                 [
                     {
-                        "node": "Satisfactory answer?",
+                        "node": "Matched KB?",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Send Response2": {
+        "Matched KB?": {
             "main": [
                 [
                     {
-                        "node": "Send Response",
+                        "node": "Prepare KB Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Prepare Ticket Payload",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare KB Response": {
+            "main": [
+                [
+                    {
+                        "node": "Send KB Response",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare KB Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare KB Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Save KB Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Payload": {
+            "main": [
+                [
+                    {
+                        "node": "Reuse Existing Ticket?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Reuse Existing Ticket?": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Existing Ticket Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Create Ticket",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Existing Ticket Response": {
+            "main": [
+                [
+                    {
+                        "node": "Send Existing Ticket Response",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Existing Ticket Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Existing Ticket Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Save Existing Ticket Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Ticket": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Ticket Ack",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Ack": {
+            "main": [
+                [
+                    {
+                        "node": "Send Ticket Ack",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Ticket Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Save Ticket Memory",
                         "type": "main",
                         "index": 0
                     }
@@ -589,7 +1053,7 @@
         "binaryMode": "separate",
         "availableInMCP": false
     },
-    "versionId": "c7b42780-2dd9-44ca-a931-6e5c32b67781",
+    "versionId": "7603f5c0-a46c-43be-ab4e-61b7e219f1d9",
     "meta": {
         "templateCredsSetupCompleted": true,
         "instanceId": "0268a196c75551f750affe93bed94017d58e91c201096757cd8f286f10d10f5c"
