@@ -379,8 +379,20 @@
 </head>
 
 <body>
-    <div class="container">
-        <!-- Header -->
+    <div class="modal" id="imageModal">
+        <img id="modalImage" class="modal-img" src="" alt="">
+    </div>
+
+    <div
+        style="position: absolute; left: 0; top: 0; bottom: 0; width: 180px; background: #f3f4f6; border-right: 1px solid #e0e0e0; z-index: 10; display: flex; flex-direction: column;">
+        <div style="padding: 16px; font-weight: bold; font-size: 16px;">Conversations</div>
+        <div id="conversationList" style="flex: 1; overflow-y: auto;"></div>
+        <button id="newChatBtn"
+            style="margin: 16px; padding: 8px 12px; border-radius: 8px; background: #667eea; color: white; border: none; cursor: pointer; font-size: 14px;">+
+            New Chat</button>
+    </div>
+
+    <div class="container" style="margin-left: 180px;">
         <div class="header">
             <div>
                 <div class="header-title">💬 Chat Support</div>
@@ -392,7 +404,6 @@
             </div>
         </div>
 
-        <!-- Messages Container -->
         <div class="messages-container" id="messagesContainer">
             <div class="empty-state">
                 <div class="empty-state-icon">💭</div>
@@ -400,7 +411,6 @@
             </div>
         </div>
 
-        <!-- Input Area -->
         <div class="input-area">
             <input type="text" id="usernameInput" class="username-input" placeholder="Your name..." value="Guest">
             <div class="input-wrapper">
@@ -418,14 +428,10 @@
         </div>
     </div>
 
-    <!-- Image Modal -->
-    <div class="modal" id="imageModal">
-        <img id="modalImage" class="modal-img" src="" alt="">
-    </div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+
         const messagesContainer = document.getElementById('messagesContainer');
         const messageInput = document.getElementById('messageInput');
         const usernameInput = document.getElementById('usernameInput');
@@ -436,125 +442,130 @@
         const activeCountEl = document.getElementById('activeCount');
         const imageModal = document.getElementById('imageModal');
         const modalImage = document.getElementById('modalImage');
+        const conversationList = document.getElementById('conversationList');
+        const newChatBtn = document.getElementById('newChatBtn');
 
         let selectedFile = null;
-        let isFirstMessage = true;
+        let activeConversationId = null;
+        let currentJoinedConversationId = null;
+        let userId = localStorage.getItem('userId') || `user_${Math.random().toString(36).substr(2, 9)}`;
 
-        // Focus username input on load
+        localStorage.setItem('userId', userId);
+
         window.addEventListener('load', () => {
             usernameInput.focus();
+            loadConversations();
         });
 
-        // Auto-resize textarea
         messageInput.addEventListener('input', () => {
             messageInput.style.height = 'auto';
             messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
         });
 
-        // Upload button click
         uploadBtn.addEventListener('click', () => {
             fileInput.click();
         });
 
-        // File selection
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
+            if (!file) return;
 
-                    const response = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
 
-                    if (!response.ok) {
-                        throw new Error('File upload failed');
-                    }
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
 
-                    const data = await response.json();
-                    selectedFile = {
-                        url: data.file_url,
-                        name: data.file_name,
-                        type: data.file_type
-                    };
-
-                    displayFilePreview(data.file_type, data.file_name, data.file_url);
-                } catch (error) {
-                    console.error('Error uploading file:', error);
-                    alert('Failed to upload file: ' + error.message);
+                if (!response.ok) {
+                    throw new Error('File upload failed');
                 }
+
+                const data = await response.json();
+
+                selectedFile = {
+                    url: data.file_url,
+                    name: data.file_name,
+                    type: data.file_type
+                };
+
+                displayFilePreview(data.file_type, data.file_name, data.file_url);
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                alert('Failed to upload file: ' + error.message);
             }
         });
 
-        // Display file preview
         function displayFilePreview(fileType, fileName, fileUrl) {
-            if (fileType === 'image') {
+            if (fileType && fileType.startsWith('image/')) {
                 imagePreview.innerHTML = `
-          <div style="position: relative; display: inline-block;">
-            <img src="${fileUrl}" class="image-preview">
-            <button class="remove-image" onclick="removeSelectedFile()">×</button>
-          </div>
-        `;
-            } else if (fileType === 'pdf') {
+                    <div style="position: relative; display: inline-block;">
+                        <img src="${fileUrl}" class="image-preview">
+                        <button class="remove-image" onclick="removeSelectedFile()">×</button>
+                    </div>
+                `;
+            } else {
                 imagePreview.innerHTML = `
-          <div style="position: relative; display: inline-block; text-align: center;">
-            <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 40px; font-weight: bold;">
-              PDF
-            </div>
-            <p style="margin-top: 8px; font-size: 12px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</p>
-            <button class="remove-image" onclick="removeSelectedFile()" style="position: absolute; top: -8px; right: -8px;">×</button>
-          </div>
-        `;
+                    <div style="position: relative; display: inline-block; text-align: center;">
+                        <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 40px; font-weight: bold;">
+                            PDF
+                        </div>
+                        <p style="margin-top: 8px; font-size: 12px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</p>
+                        <button class="remove-image" onclick="removeSelectedFile()" style="position: absolute; top: -8px; right: -8px;">×</button>
+                    </div>
+                `;
             }
         }
 
-        // Remove selected file
         window.removeSelectedFile = () => {
             selectedFile = null;
             imagePreview.innerHTML = '';
             fileInput.value = '';
         };
 
-        // Send message
+        function renderEmptyState() {
+            messagesContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">💭</div>
+                    <p>No messages yet. Start a conversation!</p>
+                </div>
+            `;
+        }
+
         async function sendMessage() {
             const text = messageInput.value.trim();
             const sender = usernameInput.value.trim() || 'Guest';
 
             if (!text && !selectedFile) return;
 
+            if (!activeConversationId) {
+                alert('Select or start a conversation first!');
+                return;
+            }
+
             const messageData = {
                 sender,
-                text
+                text,
+                conversationId: activeConversationId
             };
 
-            // Add file info if available
             if (selectedFile) {
                 messageData.file_url = selectedFile.url;
                 messageData.file_type = selectedFile.type;
                 messageData.file_name = selectedFile.name;
             }
 
-            // Send via socket
             socket.emit('sendMessage', messageData);
 
-            // Update UI
             messageInput.value = '';
             messageInput.style.height = 'auto';
             removeSelectedFile();
-
-            // Clear empty state
-            if (isFirstMessage) {
-                messagesContainer.innerHTML = '';
-                isFirstMessage = false;
-            }
         }
 
-        // Send button click
         sendBtn.addEventListener('click', sendMessage);
 
-        // Enter to send (Shift+Enter for new line)
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -562,64 +573,75 @@
             }
         });
 
-        // Typing indicator
         let typingTimeout;
         messageInput.addEventListener('input', () => {
             socket.emit('typing', { sender: usernameInput.value || 'Guest', isTyping: true });
+
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
                 socket.emit('typing', { sender: usernameInput.value || 'Guest', isTyping: false });
             }, 1000);
         });
 
-        // Socket event listeners
         socket.on('newMessage', (messageData) => {
+            if (!messageData || messageData.conversationId !== activeConversationId) return;
+
             const isSent = messageData.sender === (usernameInput.value || 'Guest');
             const messageElement = createMessageElement(messageData, isSent);
+            removeEmptyStateIfNeeded();
             messagesContainer.appendChild(messageElement);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            loadConversations();
+        });
+
+        socket.on('responseMessage', (responseData) => {
+            if (!responseData || responseData.conversationId !== activeConversationId) return;
+
+            const messageElement = createMessageElement(responseData, false);
+            removeEmptyStateIfNeeded();
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            loadConversations();
         });
 
         socket.on('activeUsers', (count) => {
             activeCountEl.textContent = `${count} online`;
         });
 
-        socket.on('userTyping', (data) => {
-            // Could implement typing indicators here
+        socket.on('userTyping', () => {
+            // optional typing indicator handling
         });
 
-        socket.on('responseMessage', (responseData) => {
-            const messageElement = createMessageElement(responseData, false);
-            messagesContainer.appendChild(messageElement);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        });
+        function removeEmptyStateIfNeeded() {
+            const emptyState = messagesContainer.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+        }
 
-        // Create message element
         function createMessageElement(messageData, isSent) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isSent ? 'sent' : 'received'}`;
 
             let content = `
-        <div class="sender-name">${messageData.sender}</div>
-        <div class="message-content">
-      `;
+                <div class="sender-name">${escapeHtml(messageData.sender || (isSent ? 'You' : 'Assistant'))}</div>
+                <div class="message-content">
+            `;
 
             if (messageData.text) {
                 content += `<div class="message-text">${escapeHtml(messageData.text)}</div>`;
             }
 
             if (messageData.file_url) {
-                if (messageData.file_type === 'image') {
+                if (messageData.file_type && messageData.file_type.startsWith('image/')) {
                     content += `
-          <img src="${messageData.file_url}" class="message-image" onclick="openImageModal('${messageData.file_url}')">
-        `;
-                } else if (messageData.file_type === 'pdf') {
+                        <img src="${messageData.file_url}" class="message-image" onclick="openImageModal('${messageData.file_url}')">
+                    `;
+                } else {
                     content += `
-          <div class="message-file" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 6px; text-align: center; cursor: pointer;" onclick="window.open('${messageData.file_url}', '_blank')">
-            <div style="font-size: 28px; margin-bottom: 4px;">📄</div>
-            <div style="font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 auto;">${messageData.file_name || 'PDF File'}</div>
-          </div>
-        `;
+                        <div class="message-file" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 6px; text-align: center; cursor: pointer;" onclick="window.open('${messageData.file_url}', '_blank')">
+                            <div style="font-size: 28px; margin-bottom: 4px;">📄</div>
+                            <div style="font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 auto;">${escapeHtml(messageData.file_name || 'PDF File')}</div>
+                        </div>
+                    `;
                 }
             }
 
@@ -629,15 +651,14 @@
             });
 
             content += `
-        </div>
-        <div class="message-time">${time}</div>
-      `;
+                </div>
+                <div class="message-time">${time}</div>
+            `;
 
             msgDiv.innerHTML = content;
             return msgDiv;
         }
 
-        // Utility function to escape HTML
         function escapeHtml(text) {
             const map = {
                 '&': '&amp;',
@@ -646,10 +667,10 @@
                 '"': '&quot;',
                 "'": '&#039;'
             };
-            return text.replace(/[&<>"']/g, m => map[m]);
+
+            return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
-        // Image modal
         window.openImageModal = (imageSrc) => {
             modalImage.src = imageSrc;
             imageModal.classList.add('active');
@@ -659,21 +680,118 @@
             imageModal.classList.remove('active');
         });
 
-        // Load message history
-        fetch('/api/messages')
-            .then(res => res.json())
-            .then(data => {
-                if (data.length > 0) {
-                    isFirstMessage = false;
-                    messagesContainer.innerHTML = '';
-                    data.forEach(msg => {
-                        const isSent = msg.sender === (usernameInput.value || 'Guest');
-                        const msgEl = createMessageElement(msg, isSent);
-                        messagesContainer.appendChild(msgEl);
-                    });
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        async function loadConversations() {
+            try {
+                const res = await fetch(`/api/conversations/${userId}`);
+                const conversations = await res.json();
+
+                conversationList.innerHTML = '';
+
+                if (!Array.isArray(conversations) || conversations.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.style.padding = '12px';
+                    empty.style.color = '#666';
+                    empty.textContent = 'No conversations yet';
+                    conversationList.appendChild(empty);
+                    return;
                 }
-            });
+
+                conversations.forEach(convo => {
+                    const item = document.createElement('div');
+                    item.style.padding = '12px';
+                    item.style.cursor = 'pointer';
+                    item.style.borderBottom = '1px solid #e0e0e0';
+                    item.style.background = convo.conversation_id === activeConversationId ? '#e0e7ef' : '';
+                    item.textContent = convo.title || convo.last_message_preview || 'New Chat';
+                    item.onclick = () => selectConversation(convo.conversation_id);
+                    conversationList.appendChild(item);
+                });
+            } catch (error) {
+                console.error('Error loading conversations:', error);
+            }
+        }
+
+        newChatBtn.onclick = async () => {
+            try {
+                const res = await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                });
+
+                const convo = await res.json();
+
+                if (!convo.conversation_id) {
+                    alert('Failed to create conversation');
+                    return;
+                }
+
+                await selectConversation(convo.conversation_id);
+                await loadConversations();
+            } catch (error) {
+                console.error('Error creating conversation:', error);
+                alert('Failed to create conversation');
+            }
+        };
+
+        async function selectConversation(conversationId) {
+            const oldConversationId = activeConversationId;
+            activeConversationId = conversationId;
+
+            if (currentJoinedConversationId && currentJoinedConversationId !== conversationId) {
+                socket.emit('switchConversation', {
+                    oldConversationId: currentJoinedConversationId,
+                    newConversationId: conversationId
+                });
+            } else if (currentJoinedConversationId !== conversationId) {
+                socket.emit('joinConversation', conversationId);
+            }
+
+            currentJoinedConversationId = conversationId;
+
+            await loadConversations();
+            await loadMessages();
+        }
+
+        async function loadMessages() {
+            if (!activeConversationId) {
+                renderEmptyState();
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/conversations/${activeConversationId}/messages`);
+                const conversationMessages = await res.json();
+
+                messagesContainer.innerHTML = '';
+
+                if (!Array.isArray(conversationMessages) || conversationMessages.length === 0) {
+                    renderEmptyState();
+                    return;
+                }
+
+                conversationMessages.forEach(msg => {
+                    const isSent = msg.role === 'user';
+
+                    const msgEl = createMessageElement({
+                        sender: msg.role === 'user' ? (usernameInput.value || 'Guest') : 'AI Assistant',
+                        text: msg.message_text,
+                        file_url: msg.file_url,
+                        file_type: msg.file_type,
+                        file_name: msg.file_name,
+                        timestamp: msg.created_at,
+                        conversationId: activeConversationId
+                    }, isSent);
+
+                    messagesContainer.appendChild(msgEl);
+                });
+
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                renderEmptyState();
+            }
+        }
     </script>
 </body>
 
