@@ -161,8 +161,9 @@
             align-items: center;
             padding: 12px 16px;
             background: #e8eaed;
-            border-radius: 18px;
+            border-radius: 18px 18px 18px 4px;
             width: fit-content;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
         }
 
         .typing-dot {
@@ -187,10 +188,12 @@
             60%,
             100% {
                 opacity: 0.3;
+                transform: translateY(0);
             }
 
             30% {
                 opacity: 1;
+                transform: translateY(-2px);
             }
         }
 
@@ -449,6 +452,7 @@
         let activeConversationId = null;
         let currentJoinedConversationId = null;
         let userId = localStorage.getItem('userId') || `user_${Math.random().toString(36).substr(2, 9)}`;
+        let pendingAiBubble = null;
 
         localStorage.setItem('userId', userId);
 
@@ -534,6 +538,39 @@
             `;
         }
 
+        function showAiLoadingBubble() {
+            if (!activeConversationId) return;
+            removeAiLoadingBubble();
+            removeEmptyStateIfNeeded();
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message received';
+            wrapper.id = 'ai-loading-bubble';
+
+            wrapper.innerHTML = `
+                <div class="sender-name">AI Assistant</div>
+                <div class="typing-indicator">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+            `;
+
+            messagesContainer.appendChild(wrapper);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            pendingAiBubble = wrapper;
+        }
+
+        function removeAiLoadingBubble() {
+            if (pendingAiBubble && pendingAiBubble.parentNode) {
+                pendingAiBubble.remove();
+            }
+            pendingAiBubble = null;
+
+            const existing = document.getElementById('ai-loading-bubble');
+            if (existing) existing.remove();
+        }
+
         async function sendMessage() {
             const text = messageInput.value.trim();
             const sender = usernameInput.value.trim() || 'Guest';
@@ -545,10 +582,13 @@
                 return;
             }
 
+            const tempTimestamp = new Date().toISOString();
+
             const messageData = {
                 sender,
                 text,
-                conversationId: activeConversationId
+                conversationId: activeConversationId,
+                timestamp: tempTimestamp
             };
 
             if (selectedFile) {
@@ -557,13 +597,22 @@
                 messageData.file_name = selectedFile.name;
             }
 
+            // show user message instantly
+            removeEmptyStateIfNeeded();
+            const userMessageElement = createMessageElement(messageData, true);
+            messagesContainer.appendChild(userMessageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            // then show AI loading bubble
+            showAiLoadingBubble();
+
+            // send to backend
             socket.emit('sendMessage', messageData);
 
             messageInput.value = '';
             messageInput.style.height = 'auto';
             removeSelectedFile();
         }
-
         sendBtn.addEventListener('click', sendMessage);
 
         messageInput.addEventListener('keydown', (e) => {
@@ -587,7 +636,14 @@
             if (!messageData || messageData.conversationId !== activeConversationId) return;
 
             const isSent = messageData.sender === (usernameInput.value || 'Guest');
-            const messageElement = createMessageElement(messageData, isSent);
+
+            // skip duplicate user message because we already added it instantly
+            if (isSent) {
+                loadConversations();
+                return;
+            }
+
+            const messageElement = createMessageElement(messageData, false);
             removeEmptyStateIfNeeded();
             messagesContainer.appendChild(messageElement);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -596,6 +652,8 @@
 
         socket.on('responseMessage', (responseData) => {
             if (!responseData || responseData.conversationId !== activeConversationId) return;
+
+            removeAiLoadingBubble();
 
             const messageElement = createMessageElement(responseData, false);
             removeEmptyStateIfNeeded();
@@ -737,6 +795,7 @@
         async function selectConversation(conversationId) {
             const oldConversationId = activeConversationId;
             activeConversationId = conversationId;
+            removeAiLoadingBubble();
 
             if (currentJoinedConversationId && currentJoinedConversationId !== conversationId) {
                 socket.emit('switchConversation', {

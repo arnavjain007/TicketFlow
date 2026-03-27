@@ -19,7 +19,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst text = String(body.text || '').trim();\nconst sender = body.sender || 'Unknown';\nconst conversationId = body.conversationId || body.sessionId || body.userId || body.sender || `conv_${Date.now()}`;\nconst history = Array.isArray(body.history) ? body.history : [];\n\nconst fileUrl = body.file_url || null;\nconst fileType = body.file_type || '';\nconst fileName = body.file_name || '';\n\nconst hasPdf = fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');\nconst hasImage = fileType.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp'].some(ext => fileName.toLowerCase().endsWith(ext));\nconst hasAttachment = Boolean(fileUrl || hasPdf || hasImage);\n\nreturn [{\n  json: {\n    sender,\n    conversationId,\n    message: text,\n    history,\n    file_url: fileUrl,\n    file_type: fileType,\n    file_name: fileName,\n    hasPdf,\n    hasImage,\n    hasAttachment,\n    messageId: body.messageId || '',\n    timestamp: body.timestamp || new Date().toISOString()\n  }\n}];"
+                "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst text = String(body.text || '').trim();\nconst sender = body.sender || 'Unknown';\nconst conversationId = body.conversationId || body.sessionId || body.userId || body.sender || `conv_${Date.now()}`;\nconst history = Array.isArray(body.history) ? body.history : [];\n\nconst fileUrl = body.file_url || null;\nconst fileType = body.file_type || '';\nconst fileName = body.file_name || '';\n\nconst hasPdf = fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');\nconst hasImage = fileType.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].some(ext => fileName.toLowerCase().endsWith(ext));\nconst hasAttachment = Boolean(fileUrl || hasPdf || hasImage);\n\nreturn [{\n  json: {\n    sender,\n    conversationId,\n    message: text,\n    history,\n    file_url: fileUrl,\n    file_type: fileType,\n    file_name: fileName,\n    hasPdf,\n    hasImage,\n    hasAttachment,\n    messageId: body.messageId || '',\n    timestamp: body.timestamp || new Date().toISOString()\n  }\n}];"
             },
             "id": "6e35c755-8137-43ae-a5a8-1a30184624fc",
             "name": "Extract Message Data1",
@@ -78,7 +78,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const item = $input.first().json;\n\nconst messagesRaw = item.messages || item.data?.messages || item.memory || item.chat_memory || [];\nconst memoryRows = Array.isArray(messagesRaw) ? messagesRaw : [];\n\nfunction extractTicketId(text) {\n  if (!text) return null;\n  const match = String(text).match(/ticket[_\\-\\s]?id[:\\s]+(ticket_[a-zA-Z0-9_-]+)/i);\n  return match ? match[1] : null;\n}\n\nconst historyFromDb = memoryRows.map(row => {\n  const text = row.message_text || row.text || '';\n  const matchedIssue = row.matched_issue || null;\n  const explicitTicketId = row.ticket_id || null;\n  const textTicketId = extractTicketId(text);\n\n  const trustedTicketId =\n    matchedIssue === 'manual_ticket' ||\n    matchedIssue === 'existing_ticket_reused' ||\n    /support ticket/i.test(text) ||\n    /ticket id/i.test(text)\n      ? (explicitTicketId || textTicketId)\n      : null;\n\n  return {\n    role: row.role || 'user',\n    text,\n    intent: row.intent || null,\n    matched_issue: matchedIssue,\n    issue_summary: row.issue_summary || null,\n    ticket_id: trustedTicketId,\n    created_at: row.created_at || null\n  };\n}).filter(x => x.text);\n\nconst incomingHistory = Array.isArray(item.history) ? item.history : [];\nconst history = historyFromDb.length > 0 ? historyFromDb : incomingHistory;\n\nlet latestTicketEntry = null;\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  if (\n    h.ticket_id &&\n    (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n  ) {\n    latestTicketEntry = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    history,\n    latest_ticket_id: latestTicketEntry ? latestTicketEntry.ticket_id : null,\n    latest_ticket_message: latestTicketEntry ? latestTicketEntry.text : null,\n    has_existing_ticket: !!latestTicketEntry\n  }\n}];"
+                "jsCode": "const item = $input.first().json;\n\nconst messagesRaw = item.messages || item.data?.messages || item.memory || item.chat_memory || [];\nconst memoryRows = Array.isArray(messagesRaw) ? messagesRaw : [];\n\nfunction extractTicketId(text) {\n  if (!text) return null;\n  const match = String(text).match(/ticket[_\\-\\s]?id[:\\s]+(ticket_[a-zA-Z0-9_-]+)/i);\n  return match ? match[1] : null;\n}\n\nconst historyFromDb = memoryRows.map(row => {\n  const text = row.message_text || row.text || '';\n  const matchedIssue = row.matched_issue || null;\n  const explicitTicketId = row.ticket_id || null;\n  const textTicketId = extractTicketId(text);\n\n  const trustedTicketId =\n    matchedIssue === 'manual_ticket' ||\n    matchedIssue === 'existing_ticket_reused' ||\n    /support ticket/i.test(text) ||\n    /ticket id/i.test(text)\n      ? (explicitTicketId || textTicketId)\n      : null;\n\n  return {\n    role: row.role || 'user',\n    text,\n    intent: row.intent || null,\n    matched_issue: matchedIssue,\n    issue_summary: row.issue_summary || null,\n    attachment_summary: row.attachment_summary || null,\n    ticket_id: trustedTicketId,\n    created_at: row.created_at || null\n  };\n}).filter(x => x.text);\n\nconst incomingHistory = Array.isArray(item.history) ? item.history : [];\nconst history = historyFromDb.length > 0 ? historyFromDb : incomingHistory;\n\nlet latestTicketEntry = null;\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  if (\n    h.ticket_id &&\n    (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n  ) {\n    latestTicketEntry = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    history,\n    latest_ticket_id: latestTicketEntry ? latestTicketEntry.ticket_id : null,\n    latest_ticket_message: latestTicketEntry ? latestTicketEntry.text : null,\n    has_existing_ticket: !!latestTicketEntry\n  }\n}];"
             },
             "id": "1164733b-8a30-456f-a2ea-4270e861c584",
             "name": "Build Conversation Context",
@@ -86,6 +86,37 @@
             "typeVersion": 2,
             "position": [
                 288,
+                12144
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/extract-attachment-text",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ {\n  \"file_url\": $json.file_url || \"\",\n  \"file_type\": $json.file_type || \"\",\n  \"file_name\": $json.file_name || \"\"\n} }}",
+                "options": {}
+            },
+            "id": "d4db24e0-ocr-http-node",
+            "name": "Extract Attachment Text",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                512,
+                12144
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const original = $('Build Conversation Context').first().json;\nconst extracted = $input.first().json || {};\n\nreturn [{\n  json: {\n    ...original,\n    attachment_text: extracted.attachment_text || '',\n    attachment_summary: extracted.attachment_summary || '',\n    attachment_extraction_method: extracted.extraction_method || 'none'\n  }\n}];"
+            },
+            "id": "7f8bce2d-merge-attachment-context",
+            "name": "Merge Attachment Context",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                736,
                 12144
             ]
         },
@@ -118,7 +149,7 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                512,
+                960,
                 12144
             ]
         },
@@ -131,7 +162,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                800,
+                1248,
                 12048
             ]
         },
@@ -149,7 +180,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1088,
+                1536,
                 12048
             ]
         },
@@ -164,7 +195,7 @@
                 "messages": {
                     "values": [
                         {
-                            "content": "=You are an intent classifier for a customer support chatbot.\n\nClassify the user's latest message into exactly one of these intents:\n- greeting_or_ack\n- error_code_issue\n- general_issue\n- follow_up\n- issue_recall\n- gibberish\n- unclear\n\nRules:\n\ngreeting_or_ack:\nmessages that are greetings or acknowledgements such as:\n\"hi\", \"hello\", \"hey\", \"hii\", \"heyy\", \"gm\", \"good morning\", \"good evening\", \"yo\", \"sup\",\n\"thanks\", \"thank you\", \"thx\", \"ok\", \"okay\", \"cool\", \"got it\", \"alright\", \"sure\", \"noted\".\n\nerror_code_issue:\nmessage contains a specific error/status code like:\n404, 401, 403, 500, 503\nor clearly refers to such an error.\n\ngeneral_issue:\na support issue/query that is not just a greeting and is not clearly a follow-up-only message.\n\nfollow_up:\nuser continues an earlier issue such as:\n\"still not working\"\n\"same issue\"\n\"what now\"\n\"not resolved yet\"\n\"did you fix it\"\n\"any update\"\n\nissue_recall:\nuser is asking about the problem they mentioned earlier such as:\n\"what issue did I report\"\n\"what problem did I mention earlier\"\n\"what error did I say before\"\n\"remind me the issue\"\n\"what was my issue\"\n\ngibberish:\nmessage is meaningless, random characters, keyboard mash, broken words, or does not form a request.\nexamples:\n\"asdjkh123\"\n\"xxxyyyzzz\"\n\"qwertyuiop\"\n\".....\"\n\"efhosefho\"\n\nunclear:\nmessage is extremely vague but still may be a human request such as:\n\"help\"\n\"issue\"\n\"problem\"\n\"check this\"\n\nReturn ONLY valid JSON in this format:\n\n{\n  \"intent\": \"greeting_or_ack | error_code_issue | general_issue | follow_up | issue_recall | gibberish | unclear\",\n  \"confidence\": 0.0,\n  \"error_code\": \"string or null\",\n  \"needs_ocr\": true,\n  \"direct_reply\": \"string or null\",\n  \"normalized_user_need\": \"string\",\n  \"needs_ticket\": false\n}\n\nAdditional rules:\n\nIf the message is greeting_or_ack:\ngenerate a friendly short response in direct_reply.\n\nExamples:\n\"Hello! How can I help you today?\"\n\"You're welcome!\"\n\"Glad I could help.\"\n\nIf the intent is not greeting_or_ack, set direct_reply to null.\n\nIf the message contains an error code, extract it into error_code.\n\nIf there is an attachment and the issue may depend on it, set needs_ocr to true.\n\nIf the message is gibberish, set normalized_user_need to:\n\"Unintelligible or meaningless input\".\n\nUse conversation history only when the latest message clearly refers to something earlier.\n\nDo not answer the user's problem here except for greeting_or_ack messages.\n\nOutput JSON only, no markdown.\n\nInput:\n{{ JSON.stringify({\n  message: $json.message,\n  normalizedText: $json.normalizedText,\n  possibleErrorCode: $json.possibleErrorCode,\n  hasAttachment: $json.hasAttachment,\n  attachmentHint: $json.attachmentHint,\n  history: ($json.history || []).slice(-6)\n}) }}"
+                            "content": "=You are an intent classifier for a customer support chatbot.\n\nClassify the user's latest message into exactly one of these intents:\n- greeting_or_ack\n- error_code_issue\n- general_issue\n- follow_up\n- issue_recall\n- gibberish\n- unclear\n\nRules:\n\ngreeting_or_ack:\nmessages that are greetings or acknowledgements such as:\n\"hi\", \"hello\", \"hey\", \"hii\", \"heyy\", \"gm\", \"good morning\", \"good evening\", \"yo\", \"sup\",\n\"thanks\", \"thank you\", \"thx\", \"ok\", \"okay\", \"cool\", \"got it\", \"alright\", \"sure\", \"noted\".\n\nerror_code_issue:\nmessage contains a specific error/status code like:\n404, 401, 403, 500, 503\nor clearly refers to such an error.\n\ngeneral_issue:\na support issue/query that is not just a greeting and is not clearly a follow-up-only message.\n\nfollow_up:\nuser continues an earlier issue such as:\n\"still not working\"\n\"same issue\"\n\"what now\"\n\"not resolved yet\"\n\"did you fix it\"\n\"any update\"\n\nissue_recall:\nuser is asking about the problem they mentioned earlier such as:\n\"what issue did I report\"\n\"what problem did I mention earlier\"\n\"what error did I say before\"\n\"remind me the issue\"\n\"what was my issue\"\n\ngibberish:\nmessage is meaningless, random characters, keyboard mash, broken words, or does not form a request.\nexamples:\n\"asdjkh123\"\n\"xxxyyyzzz\"\n\"qwertyuiop\"\n\".....\"\n\"efhosefho\"\n\nunclear:\nmessage is extremely vague but still may be a human request such as:\n\"help\"\n\"issue\"\n\"problem\"\n\"check this\"\n\nImportant:\nIf the attachment_summary contains the main problem and the user text is short like \"see this\", \"check screenshot\", \"this issue\", then classify using the attachment_summary too.\n\nReturn ONLY valid JSON in this format:\n{\n  \"intent\": \"greeting_or_ack | error_code_issue | general_issue | follow_up | issue_recall | gibberish | unclear\",\n  \"confidence\": 0.0,\n  \"error_code\": \"string or null\",\n  \"needs_ocr\": true,\n  \"direct_reply\": \"string or null\",\n  \"normalized_user_need\": \"string\",\n  \"needs_ticket\": false\n}\n\nAdditional rules:\n- If the message is greeting_or_ack, set direct_reply to a friendly short response.\n- If the intent is not greeting_or_ack, set direct_reply to null.\n- If there is a clear error code, extract it into error_code.\n- If there is an attachment and the issue may depend on it, set needs_ocr to true.\n- If the message is gibberish, set normalized_user_need to \"Unintelligible or meaningless input\".\n- Use conversation history only when the latest message clearly refers to something earlier.\n- If the main issue is visible in the attachment_summary, use it in normalized_user_need.\n- Do not answer the user's problem here except for greeting_or_ack messages.\n- Output JSON only, no markdown.\n\nInput:\n{{ JSON.stringify({\n  message: $json.message,\n  normalizedText: $json.normalizedText,\n  possibleErrorCode: $json.possibleErrorCode,\n  hasAttachment: $json.hasAttachment,\n  attachmentHint: $json.attachmentHint,\n  attachment_text: $json.attachment_text,\n  attachment_summary: $json.attachment_summary,\n  history: ($json.history || []).slice(-6)\n}) }}"
                         }
                     ]
                 },
@@ -176,7 +207,7 @@
             "type": "@n8n/n8n-nodes-langchain.googleGemini",
             "typeVersion": 1.1,
             "position": [
-                736,
+                1184,
                 12240
             ],
             "credentials": {
@@ -188,15 +219,79 @@
         },
         {
             "parameters": {
-                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Build Conversation Context').item.json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Merge Attachment Context').first().json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
             },
             "id": "3acd8c91-f3bb-4724-bbfa-fa5761f13ab2",
             "name": "Parse Intent",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1088,
+                1536,
                 12240
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "62e14e98-7f77-4b20-af0d-1edd2d3da0d8",
+                            "leftValue": "={{ $json.parsed_intent.intent }}",
+                            "rightValue": "issue_recall",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                1760,
+                12240
+            ],
+            "id": "ed3e6be8-7983-46eb-bb37-9bfb415fcd76",
+            "name": "Issue recall handler"
+        },
+        {
+            "parameters": {
+                "jsCode": "const history = $json.history || [];\n\nconst lastIssue = history\n  .slice()\n  .reverse()\n  .find(m => {\n    const intent = (m.intent || '').toLowerCase().trim();\n    const issueSummary = (m.issue_summary || '').trim();\n    const matchedIssue = (m.matched_issue || '').toLowerCase().trim();\n\n    return (\n      issueSummary &&\n      intent !== 'greeting_or_ack' &&\n      matchedIssue !== 'greeting_or_ack'\n    );\n  });\n\nlet reply;\n\nif (!lastIssue) {\n  reply = \"I couldn't find any issue you reported earlier.\";\n} else {\n  const issue = lastIssue.issue_summary;\n  const ticket = lastIssue.ticket_id || null;\n\n  reply = `Earlier you reported this issue: \"${issue}\".`;\n\n  if (ticket) {\n    reply += ` A support ticket was created with ID ${ticket}.`;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    final_category: 'issue_recall',\n    conversationId: $json.conversationId || '',\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1984,
+                12528
+            ],
+            "id": "216ba9f6-28bc-4bae-b14a-64581543d7ed",
+            "name": "Recall node"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ {\n  \"response\": $json.final_response_text || '',\n  \"sender\": \"AI Assistant\",\n  \"category\": $json.final_category || \"issue_recall\",\n  \"originalMessageId\": $json.messageId || \"\",\n  \"conversationId\": $json.conversationId || \"\"\n} }}",
+                "options": {}
+            },
+            "id": "53fdc3b4-a5da-4ea2-ad5b-d1249e35bc5b",
+            "name": "Send Recall Response1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                2208,
+                12528
             ]
         },
         {
@@ -228,7 +323,7 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                1536,
+                1984,
                 12144
             ]
         },
@@ -241,7 +336,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1760,
+                2208,
                 11952
             ]
         },
@@ -259,20 +354,20 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1984,
+                2432,
                 11856
             ]
         },
         {
             "parameters": {
-                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'greeting',\n    matched_issue: 'greeting',\n    issue_summary: null,\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'greeting_or_ack',\n    matched_issue: 'greeting_or_ack',\n    issue_summary: null,\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
             },
             "id": "47635d00-efa1-4d7c-a962-af6daa0928e6",
             "name": "Prepare Greeting Memory",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1984,
+                2432,
                 12048
             ]
         },
@@ -290,7 +385,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2272,
+                2720,
                 12048
             ]
         },
@@ -321,7 +416,7 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2.3,
             "position": [
-                1760,
+                2208,
                 12336
             ],
             "id": "f29fce54-5c57-4b63-a390-cfdd4f2638ff",
@@ -336,7 +431,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1984,
+                2432,
                 12432
             ]
         },
@@ -354,7 +449,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2272,
+                2720,
                 12432
             ]
         },
@@ -367,7 +462,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1984,
+                2432,
                 12240
             ]
         },
@@ -382,7 +477,7 @@
                 "messages": {
                     "values": [
                         {
-                            "content": "=You are a support issue matcher.\\n\\nUser issue:\\n{{ $json.message }}\\n\\nNormalized user need:\\n{{ $json.parsed_intent.normalized_user_need }}\\n\\nDetected intent:\\n{{ $json.parsed_intent.intent }}\\n\\nPossible error code:\\n{{ $json.parsed_intent.error_code || $json.possibleErrorCode || '' }}\\n\\nPrevious conversation:\\n{{ JSON.stringify(($json.history || []).slice(-6)) }}\\n\\nKnowledge base:\\n{{ JSON.stringify($json.kb) }}\\n\\nInstructions:\\n- Match the user's issue to the closest KB entry by meaning.\\n- Use previous conversation when the latest message is vague, such as 'same issue', 'still pending', or 'not resolved yet'.\\n- If the user has an error code like 404/401/403/500/503, prioritize matching the corresponding KB error entry.\\n- If the user is asking to contact support, talk to a human, escalate, or connect to a support person, return matched_issue as \\\"no_match\\\".\\n- If the user asks for their ticket ID, do not invent one. Return matched_issue as \\\"no_match\\\" and leave ticket reuse to the workflow logic.\\n- If there is no clear match, return matched_issue as \\\"no_match\\\".\\n- Return JSON only.\\n\\nOutput format:\\n{\\n  \\\"matched_issue\\\": \\\"string\\\",\\n  \\\"short_resolution_or_hint\\\": \\\"string\\\",\\n  \\\"confidence\\\": 0.0,\\n  \\\"needs_ticket\\\": false\\n}"
+                            "content": "=You are a support issue matcher.\n\nUser issue:\n{{ $json.message }}\n\nNormalized user need:\n{{ $json.parsed_intent.normalized_user_need }}\n\nAttachment summary:\n{{ $json.attachment_summary || '' }}\n\nDetected intent:\n{{ $json.parsed_intent.intent }}\n\nPossible error code:\n{{ $json.parsed_intent.error_code || $json.possibleErrorCode || '' }}\n\nPrevious conversation:\n{{ JSON.stringify(($json.history || []).slice(-6)) }}\n\nKnowledge base:\n{{ JSON.stringify($json.kb) }}\n\nInstructions:\n- Match the user's issue to the closest KB entry by meaning.\n- Use the attachment summary if the text message is short or vague.\n- Use previous conversation when the latest message is vague, such as 'same issue', 'still pending', or 'not resolved yet'.\n- If the user has an error code like 404/401/403/500/503, prioritize matching the corresponding KB error entry.\n- If the user is asking to contact support, talk to a human, escalate, or connect to a support person, return matched_issue as \"no_match\".\n- If the user asks for their ticket ID, do not invent one. Return matched_issue as \"no_match\" and leave ticket reuse to the workflow logic.\n- If there is no clear match, return matched_issue as \"no_match\".\n- Return JSON only.\n\nOutput format:\n{\n  \"matched_issue\": \"string\",\n  \"short_resolution_or_hint\": \"string\",\n  \"confidence\": 0.0,\n  \"needs_ticket\": false\n}"
                         }
                     ]
                 },
@@ -394,7 +489,7 @@
             "type": "@n8n/n8n-nodes-langchain.googleGemini",
             "typeVersion": 1.1,
             "position": [
-                2208,
+                2656,
                 12240
             ],
             "credentials": {
@@ -413,7 +508,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                2560,
+                3008,
                 12240
             ]
         },
@@ -445,7 +540,7 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                2784,
+                3232,
                 12240
             ]
         },
@@ -458,7 +553,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3008,
+                3456,
                 11952
             ]
         },
@@ -476,20 +571,20 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3232,
+                3680,
                 11856
             ]
         },
         {
             "parameters": {
-                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'general_issue',\n    matched_issue: $json.final_category || $json.parsed_issue?.matched_issue || 'general_issue',\n    issue_summary: $json.parsed_issue?.matched_issue || $json.parsed_intent?.normalized_user_need || $json.message || '',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'general_issue',\n    matched_issue: $json.final_category || $json.parsed_issue?.matched_issue || 'general_issue',\n    issue_summary: $json.parsed_issue?.matched_issue || $json.parsed_intent?.normalized_user_need || $json.attachment_summary || $json.message || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
             },
             "id": "61dbd322-af0d-4b37-9ca5-0678effb5e47",
             "name": "Prepare KB Memory",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3232,
+                3680,
                 12048
             ]
         },
@@ -507,20 +602,20 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3456,
+                3904,
                 12048
             ]
         },
         {
             "parameters": {
-                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\nconst message = ($json.message || '').toLowerCase().trim();\nconst existingTicketId = $json.latest_ticket_id || null;\nconst history = Array.isArray($json.history) ? $json.history : [];\n\nconst wantsSupportPerson = /contact support|support person|human support|talk to support|connect me to support|connect to support|agent|human agent|representative|real person|customer care|escalate/i.test(message);\nconst asksForTicketId = /ticket id|existing ticket|my ticket|previous ticket|show ticket|ticket number/i.test(message);\n\nconst hasManualTicketInThisChat = history.some(h =>\n  h.ticket_id &&\n  (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n);\n\nconst reuseExistingTicket =\n  !!existingTicketId &&\n  hasManualTicketInThisChat &&\n  (\n    wantsSupportPerson ||\n    asksForTicketId ||\n    issue.matched_issue === 'no_match'\n  );\n\nreturn [{\n  json: {\n    ...$json,\n    conversationId: $json.conversationId || '',\n    reuse_existing_ticket: reuseExistingTicket,\n    existing_ticket_id: reuseExistingTicket ? existingTicketId : null,\n    ticketPayload: {\n      ticket_title: intent.error_code\n        ? `Issue related to ${intent.error_code}`\n        : (\n            issue.matched_issue &&\n            issue.matched_issue !== 'no_match'\n              ? issue.matched_issue\n              : 'Manual support ticket'\n          ),\n      ticket_description:\n        intent.normalized_user_need ||\n        $json.message ||\n        'Manual support review needed',\n      category:\n        issue.matched_issue &&\n        issue.matched_issue !== 'no_match'\n          ? issue.matched_issue\n          : (intent.intent || 'general_issue'),\n      priority: intent.intent === 'error_code_issue' ? 'High' : 'Medium'\n    },\n    messageId: $json.messageId || '',\n    originalCategory:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n    originalMessage: $json.message || '',\n    originalIntent: intent.intent || 'general_issue',\n    issue_summary:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.normalized_user_need || $json.message || '')\n  }\n}];"
+                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\nconst message = ($json.message || '').toLowerCase().trim();\nconst existingTicketId = $json.latest_ticket_id || null;\nconst history = Array.isArray($json.history) ? $json.history : [];\n\nconst wantsSupportPerson = /contact support|support person|human support|talk to support|connect me to support|connect to support|agent|human agent|representative|real person|customer care|escalate/i.test(message);\nconst asksForTicketId = /ticket id|existing ticket|my ticket|previous ticket|show ticket|ticket number/i.test(message);\n\nconst hasManualTicketInThisChat = history.some(h =>\n  h.ticket_id &&\n  (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n);\n\nconst reuseExistingTicket =\n  !!existingTicketId &&\n  hasManualTicketInThisChat &&\n  (\n    wantsSupportPerson ||\n    asksForTicketId ||\n    issue.matched_issue === 'no_match'\n  );\n\nreturn [{\n  json: {\n    ...$json,\n    conversationId: $json.conversationId || '',\n    reuse_existing_ticket: reuseExistingTicket,\n    existing_ticket_id: reuseExistingTicket ? existingTicketId : null,\n    ticketPayload: {\n      ticket_title: intent.error_code\n        ? `Issue related to ${intent.error_code}`\n        : (\n            issue.matched_issue &&\n            issue.matched_issue !== 'no_match'\n              ? issue.matched_issue\n              : 'Manual support ticket'\n          ),\n      ticket_description:\n        intent.normalized_user_need ||\n        $json.attachment_summary ||\n        $json.message ||\n        'Manual support review needed',\n      category:\n        issue.matched_issue &&\n        issue.matched_issue !== 'no_match'\n          ? issue.matched_issue\n          : (intent.intent || 'general_issue'),\n      priority: intent.intent === 'error_code_issue' ? 'High' : 'Medium'\n    },\n    messageId: $json.messageId || '',\n    originalCategory:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n    originalMessage: $json.message || '',\n    originalIntent: intent.intent || 'general_issue',\n    issue_summary:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.normalized_user_need || $json.attachment_summary || $json.message || '')\n  }\n}];"
             },
             "id": "bed741d5-2101-455f-9058-6a19fe19eb7f",
             "name": "Prepare Ticket Payload",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3008,
+                3456,
                 12432
             ]
         },
@@ -553,7 +648,7 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                3232,
+                3680,
                 12432
             ]
         },
@@ -566,7 +661,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3456,
+                3904,
                 12240
             ]
         },
@@ -584,20 +679,20 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3680,
+                4128,
                 12144
             ]
         },
         {
             "parameters": {
-                "jsCode": "const p = $('Prepare Existing Ticket Response').first().json;\nconst t = $('Prepare Ticket Payload').first().json;\n\nreturn [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.originalMessage || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.originalIntent || 'general_issue',\n    matched_issue: 'existing_ticket_reused',\n    issue_summary: $json.issue_summary || $json.originalMessage || '',\n    ticket_id: $json.final_ticket_id || $json.existing_ticket_id || null,\n    messageId: $json.messageId || ''\n  }\n}];"
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.originalMessage || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.originalIntent || 'general_issue',\n    matched_issue: 'existing_ticket_reused',\n    issue_summary: $json.issue_summary || $json.originalMessage || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: $json.final_ticket_id || $json.existing_ticket_id || null,\n    messageId: $json.messageId || ''\n  }\n}];"
             },
             "id": "084117bb-2e01-4625-be10-f09290a8a388",
             "name": "Prepare Existing Ticket Memory",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3680,
+                4128,
                 12336
             ]
         },
@@ -615,7 +710,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3904,
+                4352,
                 12336
             ]
         },
@@ -633,7 +728,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3456,
+                3904,
                 12624
             ]
         },
@@ -646,7 +741,7 @@
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3680,
+                4128,
                 12624
             ]
         },
@@ -664,20 +759,20 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                3904,
+                4352,
                 12528
             ]
         },
         {
             "parameters": {
-                "jsCode": "const source = $('Prepare Ticket Ack').first().json;\n\nreturn [{\n  json: {\n    conversationId: source.conversationId || '',\n    user_message: source.originalMessage || '',\n    assistant_message: source.final_response_text || '',\n    intent: source.originalIntent || 'general_issue',\n    matched_issue: source.final_category || source.originalCategory || 'manual_ticket',\n    issue_summary: source.issue_summary || source.originalMessage || '',\n    ticket_id: source.final_ticket_id || null,\n    messageId: source.messageId || ''\n  }\n}];"
+                "jsCode": "const source = $('Prepare Ticket Ack').first().json;\n\nreturn [{\n  json: {\n    conversationId: source.conversationId || '',\n    user_message: source.originalMessage || '',\n    assistant_message: source.final_response_text || '',\n    intent: source.originalIntent || 'general_issue',\n    matched_issue: source.final_category || source.originalCategory || 'manual_ticket',\n    issue_summary: source.issue_summary || source.originalMessage || '',\n    attachment_summary: source.attachment_summary || '',\n    ticket_id: source.final_ticket_id || null,\n    messageId: source.messageId || ''\n  }\n}];"
             },
             "id": "eaa59c90-f298-4205-87d8-7124c085fa25",
             "name": "Prepare Ticket Memory",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                3904,
+                4352,
                 12720
             ]
         },
@@ -695,72 +790,8 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                4128,
+                4576,
                 12720
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": true,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 3
-                    },
-                    "conditions": [
-                        {
-                            "id": "62e14e98-7f77-4b20-af0d-1edd2d3da0d8",
-                            "leftValue": "={{ $json.parsed_intent.intent }}",
-                            "rightValue": "issue_recall",
-                            "operator": {
-                                "type": "string",
-                                "operation": "equals"
-                            }
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {}
-            },
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2.3,
-            "position": [
-                1312,
-                12240
-            ],
-            "id": "ed3e6be8-7983-46eb-bb37-9bfb415fcd76",
-            "name": "Issue recall handler"
-        },
-        {
-            "parameters": {
-                "jsCode": "const history = $json.history || [];\n\nconst lastIssue = history\n  .slice()\n  .reverse()\n  .find(m => {\n    const intent = (m.intent || '').toLowerCase().trim();\n    const issueSummary = (m.issue_summary || '').trim();\n    const matchedIssue = (m.matched_issue || '').toLowerCase().trim();\n\n    return (\n      issueSummary &&\n      intent !== 'greeting' &&\n      matchedIssue !== 'greeting'\n    );\n  });\n\nlet reply;\n\nif (!lastIssue) {\n  reply = \"I couldn't find any issue you reported earlier.\";\n} else {\n  const issue = lastIssue.issue_summary;\n  const ticket = lastIssue.ticket_id || null;\n\n  reply = `Earlier you reported this issue: \"${issue}\".`;\n\n  if (ticket) {\n    reply += ` A support ticket was created with ID ${ticket}.`;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    final_category: \"issue_recall\",\n    conversationId: $json.conversationId || '',\n    messageId: $json.messageId || ''\n  }\n}];"
-            },
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                1536,
-                12528
-            ],
-            "id": "216ba9f6-28bc-4bae-b14a-64581543d7ed",
-            "name": "Recall node"
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/send-response",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ {\n  \"response\": $json.final_response_text,\n  \"sender\": \"AI Assistant\",\n  \"category\": $json.final_category || \"issue_recall\",\n  \"originalMessageId\": $json.messageId || \"\",\n  \"conversationId\": $json.conversationId || \"\"\n}\n}}",
-                "options": {}
-            },
-            "id": "53fdc3b4-a5da-4ea2-ad5b-d1249e35bc5b",
-            "name": "Send Recall Response1",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                1760,
-                12528
             ]
         }
     ],
@@ -830,6 +861,28 @@
             "main": [
                 [
                     {
+                        "node": "Extract Attachment Text",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Extract Attachment Text": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Attachment Context",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge Attachment Context": {
+            "main": [
+                [
+                    {
                         "node": "Empty Message?",
                         "type": "main",
                         "index": 0
@@ -882,6 +935,35 @@
                 [
                     {
                         "node": "Issue recall handler",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Issue recall handler": {
+            "main": [
+                [
+                    {
+                        "node": "Recall node",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Is Greeting?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Recall node": {
+            "main": [
+                [
+                    {
+                        "node": "Send Recall Response1",
                         "type": "main",
                         "index": 0
                     }
@@ -1128,35 +1210,6 @@
                 [
                     {
                         "node": "Save Ticket Memory",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Issue recall handler": {
-            "main": [
-                [
-                    {
-                        "node": "Recall node",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
-                [
-                    {
-                        "node": "Is Greeting?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Recall node": {
-            "main": [
-                [
-                    {
-                        "node": "Send Recall Response1",
                         "type": "main",
                         "index": 0
                     }
