@@ -12,13 +12,13 @@
                     ]
                 }
             },
-            "id": "1",
+            "id": "ba4d36b4-48df-47cd-8d09-d10fa26a200f",
             "name": "Daily Trigger",
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1.2,
             "position": [
-                200,
-                300
+                -944,
+                -320
             ]
         },
         {
@@ -27,93 +27,60 @@
                 "url": "http://172.17.0.1:8000/api/tickets/escalation-due",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ { \"days_without_response\": 4 } }}",
+                "jsonBody": "={{ { \"days_without_response\": 0 } }}",
                 "options": {}
             },
-            "id": "2",
+            "id": "21d9728a-312c-47c8-8aed-294298bf6760",
             "name": "Get Open Tickets For Escalation",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                440,
-                300
+                -720,
+                -320
             ]
         },
         {
             "parameters": {
                 "jsCode": "const data = $input.first().json;\n\n// Support either:\n// 1. backend returns an array directly\n// 2. backend returns { tickets: [...] }\n// 3. backend returns { data: [...] }\nlet tickets = [];\n\nif (Array.isArray(data)) {\n  tickets = data;\n} else if (Array.isArray(data.tickets)) {\n  tickets = data.tickets;\n} else if (Array.isArray(data.data)) {\n  tickets = data.data;\n}\n\nreturn tickets.map(ticket => ({ json: ticket }));"
             },
-            "id": "3",
+            "id": "09564abe-4927-469f-b154-7372f95d1762",
             "name": "Split Tickets",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                680,
-                300
+                -496,
+                -320
             ]
         },
         {
             "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": true,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 2
-                    },
-                    "conditions": [
-                        {
-                            "id": "4a",
-                            "leftValue": "={{ !!$json.ticket_id }}",
-                            "rightValue": true,
-                            "operator": {
-                                "type": "boolean",
-                                "operation": "equals"
-                            }
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {}
+                "jsCode": "return $input.all().map(item => {\n  const raw = item.json;\n  const t = raw.data || raw;\n\n  const assignedLabel =\n    t.assigned_to === 'dev' ? 'Developer' :\n    t.assigned_to === 'manager' ? 'Manager' :\n    t.assigned_to === 'support_team' ? 'Support Team' :\n    t.assigned_to || 'Unknown Assignee';\n\n  return {\n    json: {\n      ...t,\n      conversationId: t.conversationId || null,\n      teamsPayload: {\n        \"@type\": \"MessageCard\",\n        \"@context\": \"http://schema.org/extensions\",\n        \"summary\": `Ticket escalation: ${t.id || ''}`,\n        \"themeColor\": \"E81123\",\n        \"title\": \"Ticket Escalation\",\n        \"text\": `CHAT_CONVERSATION_ID: ${t.conversationId || 'N/A'}`,\n        \"sections\": [\n          {\n            \"facts\": [\n              { \"name\": \"Ticket ID\", \"value\": t.id || '' },\n              { \"name\": \"Title\", \"value\": t.title || 'Support Ticket' },\n              { \"name\": \"Issue\", \"value\": t.description || 'No description available' },\n              { \"name\": \"Assigned To\", \"value\": assignedLabel },\n              { \"name\": \"Escalation Level\", \"value\": String(t.escalation_level || 0) },\n              { \"name\": \"Created At\", \"value\": t.created_at || '' }\n            ]\n          }\n        ]\n      }\n    }\n  };\n});"
             },
-            "id": "4",
-            "name": "Has Ticket?",
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2,
-            "position": [
-                900,
-                300
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const t = $input.first().json;\n\nconst webhook = t.escalation_teams_webhook || 'https://YOUR-MANAGER-TEAMS-WEBHOOK';\nconst assignedToName = t.assigned_to_name || 'Unknown Assignee';\nconst escalationToName = t.escalation_to_name || 'Manager';\nconst ticketId = t.ticket_id || '';\nconst ticketTitle = t.ticket_title || 'Support Ticket';\nconst ticketDescription = t.ticket_description || t.issue_summary || 'No description available';\nconst createdAt = t.created_at || '';\nconst conversationId = t.conversationId || t.conversation_id || '';\n\nreturn [{\n  json: {\n    ...t,\n    escalation_webhook: webhook,\n    teamsPayload: {\n      text:\n        'Ticket escalation\\n\\n' +\n        'Ticket ID: ' + ticketId + '\\n' +\n        'Title: ' + ticketTitle + '\\n' +\n        'Issue: ' + ticketDescription + '\\n' +\n        'Originally Assigned To: ' + assignedToName + '\\n' +\n        'Escalated To: ' + escalationToName + '\\n' +\n        'Created At: ' + createdAt + '\\n' +\n        'Conversation ID: ' + conversationId + '\\n' +\n        'Reason: No response within 4 days.'\n    }\n  }\n}];"
-            },
-            "id": "5",
+            "id": "6c50b4b2-1077-4cc1-ac70-e1b22d2feabb",
             "name": "Prepare Escalation Teams Message",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1140,
-                220
+                -48,
+                -320
             ]
         },
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ $json.escalation_webhook }}",
+                "url": "=https://defaulted1e38cdc228417082d81b69381f2c.0c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2550ce5f918e49fb9445d811f387ea9d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9q-QwqYZapL82iXTEjskwERNfpMuTH7PCzoSJVKe_Vo",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ $json.teamsPayload }}",
                 "options": {}
             },
-            "id": "6",
+            "id": "b4ec1404-e34f-44b9-b1e9-9b5892cdecb2",
             "name": "Send Escalation To Teams",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1400,
-                220
+                176,
+                -320
             ]
         },
         {
@@ -122,32 +89,51 @@
                 "url": "http://172.17.0.1:8000/api/tickets/mark-escalated",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ { \"ticket_id\": $json.ticket_id, \"escalated\": true, \"escalated_at\": new Date().toISOString() } }}",
+                "jsonBody": "={{ {\n  \"ticket_id\": $json.id,\n  \"escalated\": true,\n  \"escalated_at\": new Date().toISOString()\n} }}",
                 "options": {}
             },
-            "id": "7",
+            "id": "f1f02b1e-d6f3-40ac-b764-1bd9f517b467",
             "name": "Mark Ticket Escalated",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1660,
-                220
+                -272,
+                -320
             ]
         },
         {
             "parameters": {
-                "jsCode": "return [{\n  json: {\n    success: true,\n    skipped: true,\n    reason: 'No valid ticket found in current item'\n  }\n}];"
+                "method": "POST",
+                "url": "=http://172.17.0.1:8000/api/teams/register-thread",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"teamsMessageId\": \"{{ $('Extract Teams message id').item.json.teamsMessageId }}\",\n  \"conversationId\": \"{{ $('Prepare Escalation Teams Message').item.json.conversationId }}\",\n  \"ticket_id\": \"{{ $('Prepare Escalation Teams Message').item.json.id }}\"\n}",
+                "options": {}
             },
-            "id": "8",
-            "name": "Skip Invalid Item",
+            "id": "c5d4a11a-8a26-4d8e-9c41-a290390dd124",
+            "name": "Register Teams Thread Mapping",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                720,
+                -432
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [\n  {\n    json: {\n      teamsMessageId:\n        $json.teamsMessageId ||\n        $json.messageId ||\n        $json.id ||\n        ''\n    }\n  }\n];"
+            },
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1140,
-                400
-            ]
+                496,
+                -432
+            ],
+            "id": "d44e1077-39aa-4e31-a7cf-1e5a7e0ae980",
+            "name": "Extract Teams message id"
         }
     ],
+    "pinData": {},
     "connections": {
         "Daily Trigger": {
             "main": [
@@ -175,25 +161,7 @@
             "main": [
                 [
                     {
-                        "node": "Has Ticket?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Has Ticket?": {
-            "main": [
-                [
-                    {
-                        "node": "Prepare Escalation Teams Message",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
-                [
-                    {
-                        "node": "Skip Invalid Item",
+                        "node": "Mark Ticket Escalated",
                         "type": "main",
                         "index": 0
                     }
@@ -213,9 +181,30 @@
         },
         "Send Escalation To Teams": {
             "main": [
+                []
+            ]
+        },
+        "Mark Ticket Escalated": {
+            "main": [
                 [
                     {
-                        "node": "Mark Ticket Escalated",
+                        "node": "Prepare Escalation Teams Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Register Teams Thread Mapping": {
+            "main": [
+                []
+            ]
+        },
+        "Extract Teams message id": {
+            "main": [
+                [
+                    {
+                        "node": "Register Teams Thread Mapping",
                         "type": "main",
                         "index": 0
                     }
@@ -225,12 +214,15 @@
     },
     "active": false,
     "settings": {
-        "executionOrder": "v1"
+        "executionOrder": "v1",
+        "binaryMode": "separate",
+        "availableInMCP": false
     },
-    "versionId": "1",
+    "versionId": "a98260e7-68ed-4828-8261-739cba364fbf",
     "meta": {
-        "templateCredsSetupCompleted": false
+        "templateCredsSetupCompleted": true,
+        "instanceId": "0268a196c75551f750affe93bed94017d58e91c201096757cd8f286f10d10f5c"
     },
-    "id": "daily-ticket-escalation-workflow",
+    "id": "MLXhIEXEvdY8ICiQ",
     "tags": []
 }

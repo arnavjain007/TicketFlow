@@ -6,59 +6,63 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const FormData = require('form-data');
+const pdfParse = require('pdf-parse');
+const Tesseract = require('tesseract.js');
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: '*',
+        methods: ['GET', 'POST', 'PATCH', 'DELETE']
     }
 });
 
 const PORT = process.env.PORT || 8000;
 const N8N_WEBHOOK_URL =
-    process.env.N8N_WEBHOOK_URL || 'http://[::1]:5678/webhook-test/chat-support';
+    process.env.N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook-test/chat-support';
 
-// Ensure uploads directory exists
+// -------------------- GLOBAL STORES --------------------
+
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Global message log
 let messages = [];
 let activeUsers = 0;
 let n8nConnected = false;
 let messageQueue = [];
 
-// In-memory conversation memory store for POC
-// key = conversationId
 const chatMemoryStore = {};
-
-// Conversation-based storage
-// conversationsStore: { userId: [ { conversation_id, title, ... } ] }
 const conversationsStore = {};
-// conversationMessagesStore: { conversation_id: [ { ...message fields... } ] }
 const conversationMessagesStore = {};
+const ticketsStore = {};
+const teamsThreadMap = {};
+
+const processedTeamsReplies = new Map();
+let sendResponseHitCount = 0;
 
 // -------------------- HELPERS --------------------
 
-function createConversation(userId, title = 'New Chat', preview = '') {
-    const conversation_id = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+function createConversation(userId, title = '', preview = '') {
+    const conversation_id = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const now = new Date().toISOString();
+
+    if (!conversationsStore[userId]) conversationsStore[userId] = [];
+
+    const chatNumber = conversationsStore[userId].length + 1;
 
     const convo = {
         conversation_id,
         user_id: userId,
-        title,
+        title: title && title.trim() ? title : `New Chat ${chatNumber}`,
         last_message_preview: preview,
         created_at: now,
         updated_at: now
     };
 
-    if (!conversationsStore[userId]) conversationsStore[userId] = [];
     conversationsStore[userId].unshift(convo);
     conversationMessagesStore[conversation_id] = [];
 
@@ -93,14 +97,156 @@ function generateConversationTitle(text = '') {
     return words.length > 40 ? words.slice(0, 40) : words;
 }
 
+function buildLocalFileUrl(filename) {
+    return `http://localhost:${PORT}/${filename}`;
+}
+
+function extractFilenameFromUrl(fileUrl = '') {
+    try {
+        const pathname = new URL(fileUrl).pathname;
+        return decodeURIComponent(path.basename(pathname));
+    } catch {
+        return path.basename(fileUrl || '');
+    }
+}
+
+function resolveLocalUploadPath(fileUrl = '', fileName = '') {
+    const filenameFromUrl = extractFilenameFromUrl(fileUrl);
+    const candidates = [filenameFromUrl, fileName].filter(Boolean);
+
+    for (const candidate of candidates) {
+        const filePath = path.join(uploadsDir, candidate);
+        if (fs.existsSync(filePath)) return filePath;
+    }
+
+    return null;
+}
+
+function summarizeText(text = '', maxLength = 500) {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    return clean.length <= maxLength ? clean : `${clean.slice(0, maxLength)}...`;
+}
+
+async function extractAttachmentContent({ file_url, file_type, file_name }) {
+    const filePath = resolveLocalUploadPath(file_url, file_name);
+
+    if (!filePath) {
+        return {
+            success: false,
+            attachment_text: '',
+            attachment_summary: '',
+            extraction_method: 'not_found',
+            error: 'Attachment file not found on server'
+        };
+    }
+
+    const resolvedType = file_type || '';
+    const lowerName = String(file_name || filePath).toLowerCase();
+
+    try {
+        if (resolvedType === 'application/pdf' || lowerName.endsWith('.pdf')) {
+            const buffer = fs.readFileSync(filePath);
+            const parsed = await pdfParse(buffer);
+            const attachmentText = (parsed.text || '').trim();
+
+            return {
+                success: true,
+                attachment_text: attachmentText,
+                attachment_summary: summarizeText(attachmentText, 1200),
+                extraction_method: 'pdf-parse'
+            };
+        }
+
+        if (
+            resolvedType.startsWith('image/') ||
+            ['.png', '.jpg', '.jpeg', '.gif', '.webp'].some(ext => lowerName.endsWith(ext))
+        ) {
+            const ocrResult = await Tesseract.recognize(filePath, 'eng');
+            const attachmentText = (ocrResult?.data?.text || '').trim();
+
+            return {
+                success: true,
+                attachment_text: attachmentText,
+                attachment_summary: summarizeText(attachmentText, 1200),
+                extraction_method: 'tesseract'
+            };
+        }
+
+        return {
+            success: false,
+            attachment_text: '',
+            attachment_summary: '',
+            extraction_method: 'unsupported',
+            error: 'Unsupported attachment type'
+        };
+    } catch (error) {
+        return {
+            success: false,
+            attachment_text: '',
+            attachment_summary: '',
+            extraction_method: 'error',
+            error: error.message
+        };
+    }
+}
+
+function applyEscalation(ticket, escalatedAt = null) {
+    if (!ticket || ticket.status === 'resolved') return ticket;
+
+    const currentLevel = ticket.escalation_level || 0;
+    if (currentLevel >= 2) return ticket;
+
+    const nextLevel = currentLevel + 1;
+    ticket.escalation_level = nextLevel;
+    ticket.status = 'escalated';
+    ticket.escalated_at = escalatedAt || new Date().toISOString();
+    ticket.updated_at = new Date().toISOString();
+
+    if (nextLevel === 1) {
+        ticket.assigned_to = 'dev';
+    } else if (nextLevel === 2) {
+        ticket.assigned_to = 'manager';
+    }
+
+    return ticket;
+}
+
+function escalateOldTickets(minutes = 2) {
+    const now = Date.now();
+
+    console.log('Running escalation check...');
+
+    Object.values(ticketsStore).forEach(ticket => {
+        if (ticket.status === 'resolved') return;
+        if ((ticket.escalation_level || 0) >= 2) return;
+
+        const lastTime = new Date(ticket.escalated_at || ticket.created_at).getTime();
+
+        console.log('Checking ticket:', ticket.id, {
+            status: ticket.status,
+            escalation_level: ticket.escalation_level,
+            assigned_to: ticket.assigned_to,
+            escalated_at: ticket.escalated_at,
+            updated_at: ticket.updated_at,
+            created_at: ticket.created_at
+        });
+
+        if (now - lastTime >= minutes * 60 * 1000) {
+            applyEscalation(ticket);
+            console.log(
+                `🚨 Re-escalated: ${ticket.id}, level: ${ticket.escalation_level}, assigned_to: ${ticket.assigned_to}`
+            );
+        }
+    });
+}
+
 // -------------------- MULTER --------------------
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-    },
+    destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => {
-        const uniqueName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.originalname}`;
+        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 11)}_${file.originalname}`;
         cb(null, uniqueName);
     }
 });
@@ -109,12 +255,9 @@ const upload = multer({
     storage,
     limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
-        if (allowedMimes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only images and PDFs are allowed'));
-        }
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+        if (allowedMimes.includes(file.mimetype)) return cb(null, true);
+        cb(new Error('Only images and PDFs are allowed'));
     }
 });
 
@@ -125,7 +268,12 @@ app.use(express.static('uploads'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// -------------------- ROUTES --------------------
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+    next();
+});
+
+// -------------------- BASIC ROUTES --------------------
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -145,7 +293,9 @@ app.get('/health', (req, res) => {
         queuedMessages: messageQueue.length,
         memoryConversations: Object.keys(chatMemoryStore).length,
         totalConversationOwners: Object.keys(conversationsStore).length,
-        totalConversations: Object.values(conversationsStore).reduce((acc, arr) => acc + arr.length, 0)
+        totalConversations: Object.values(conversationsStore).reduce((acc, arr) => acc + arr.length, 0),
+        totalTickets: Object.keys(ticketsStore).length,
+        totalTeamsThreadMappings: Object.keys(teamsThreadMap).length
     });
 });
 
@@ -157,10 +307,8 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const fileUrl = `http://localhost:${PORT}/${req.file.filename}`;
+        const fileUrl = buildLocalFileUrl(req.file.filename);
         const fileType = req.file.mimetype;
-
-        console.log(`📁 File uploaded: ${req.file.originalname} -> ${fileUrl}`);
 
         res.json({
             success: true,
@@ -172,6 +320,46 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     } catch (error) {
         console.error('❌ File upload error:', error.message);
         res.status(500).json({ error: 'File upload failed' });
+    }
+});
+
+// -------------------- ATTACHMENT EXTRACTION ROUTE --------------------
+
+app.post('/api/extract-attachment-text', async (req, res) => {
+    try {
+        const { file_url, file_type, file_name } = req.body || {};
+
+        if (!file_url && !file_name) {
+            return res.status(400).json({
+                success: false,
+                error: 'file_url or file_name is required',
+                attachment_text: '',
+                attachment_summary: '',
+                extraction_method: 'none'
+            });
+        }
+
+        const result = await extractAttachmentContent({ file_url, file_type, file_name });
+
+        return res.json({
+            success: result.success,
+            file_url: file_url || null,
+            file_type: file_type || null,
+            file_name: file_name || null,
+            attachment_text: result.attachment_text || '',
+            attachment_summary: result.attachment_summary || '',
+            extraction_method: result.extraction_method || 'none',
+            error: result.error || null
+        });
+    } catch (error) {
+        console.error('❌ Error in /api/extract-attachment-text:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: error.message,
+            attachment_text: '',
+            attachment_summary: '',
+            extraction_method: 'error'
+        });
     }
 });
 
@@ -207,7 +395,7 @@ app.post('/api/messages', async (req, res) => {
             file_url: file_url || null,
             file_type: file_type || null,
             file_name: file_name || null,
-            messageId: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            messageId: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
         };
 
         messages.push(messageData);
@@ -219,6 +407,8 @@ app.post('/api/messages', async (req, res) => {
         conversationMessagesStore[finalConversationId].push({
             role: 'user',
             message_text: messageData.text,
+            user_message: messageData.text,
+            user_query: messageData.text,
             file_url: messageData.file_url,
             file_type: messageData.file_type,
             file_name: messageData.file_name,
@@ -232,7 +422,6 @@ app.post('/api/messages', async (req, res) => {
         });
 
         io.emit('newMessage', messageData);
-
         await sendToN8n(messageData);
 
         res.json({
@@ -250,13 +439,10 @@ app.post('/api/messages', async (req, res) => {
 
 io.on('connection', (socket) => {
     activeUsers++;
-    console.log(`User connected. Active users: ${activeUsers}`);
     io.emit('activeUsers', activeUsers);
 
     socket.on('sendMessage', async (data) => {
         try {
-            console.log('🟢 Received sendMessage event:', data);
-
             const messageData = {
                 type: 'message',
                 sender: data.sender || 'Anonymous',
@@ -266,7 +452,7 @@ io.on('connection', (socket) => {
                 file_url: data.file_url || null,
                 file_type: data.file_type || null,
                 file_name: data.file_name || null,
-                messageId: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                messageId: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
             };
 
             messages.push(messageData);
@@ -278,6 +464,8 @@ io.on('connection', (socket) => {
             conversationMessagesStore[messageData.conversationId].push({
                 role: 'user',
                 message_text: messageData.text,
+                user_message: messageData.text,
+                user_query: messageData.text,
                 file_url: messageData.file_url,
                 file_type: messageData.file_type,
                 file_name: messageData.file_name,
@@ -293,34 +481,23 @@ io.on('connection', (socket) => {
             }
 
             io.to(messageData.conversationId).emit('newMessage', messageData);
-            console.log('🔔 Emitted newMessage to clients:', messageData);
-
-            console.log('🟡 Calling sendToN8n with:', messageData);
-            const n8nResult = await sendToN8n(messageData);
-            console.log('🌐 n8n webhook result:', n8nResult);
-
-            console.log(`Message received from ${messageData.sender}:`, {
-                conversationId: messageData.conversationId,
-                text: messageData.text.substring(0, 50),
-                hasFile: !!messageData.file_url,
-                fileType: messageData.file_type,
-                fileUrl: messageData.file_url
-            });
+            await sendToN8n(messageData);
         } catch (error) {
             console.error('❌ Error sending message:', error.message);
             socket.emit('error', { message: 'Failed to send message' });
         }
     });
+
     socket.on('joinConversation', (conversationId) => {
         if (!conversationId) return;
         socket.join(conversationId);
-        console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
     });
+
     socket.on('switchConversation', ({ oldConversationId, newConversationId }) => {
         if (oldConversationId) socket.leave(oldConversationId);
         if (newConversationId) socket.join(newConversationId);
-        console.log(`Socket ${socket.id} switched from ${oldConversationId} to ${newConversationId}`);
     });
+
     socket.on('typing', (data) => {
         socket.broadcast.emit('userTyping', {
             sender: data.sender,
@@ -330,7 +507,6 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         activeUsers--;
-        console.log(`User disconnected. Active users: ${activeUsers}`);
         io.emit('activeUsers', activeUsers);
     });
 });
@@ -339,7 +515,6 @@ io.on('connection', (socket) => {
 
 async function initializeN8nConnection() {
     try {
-        console.log('✅ Connected to n8n workflow');
         n8nConnected = true;
 
         while (messageQueue.length > 0) {
@@ -355,59 +530,24 @@ async function initializeN8nConnection() {
 
 async function sendToN8n(messageData) {
     try {
-        console.log('🟡 sendToN8n called:', messageData);
+        const payload = {
+            sender: messageData.sender,
+            conversationId: messageData.conversationId || messageData.sender || 'Guest',
+            text: messageData.text,
+            file_url: messageData.file_url,
+            file_type: messageData.file_type,
+            file_name: messageData.file_name,
+            timestamp: messageData.timestamp,
+            messageId: messageData.messageId,
+            hasFile: !!messageData.file_url
+        };
 
-        let response;
+        const response = await axios.post(N8N_WEBHOOK_URL, payload, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 30000
+        });
 
-        if (messageData.file_url && messageData.file_type && messageData.file_type.startsWith('image')) {
-            const fileName = path.basename(messageData.file_url);
-            const filePath = path.join(uploadsDir, fileName);
-
-            if (!fs.existsSync(filePath)) {
-                console.error('❌ Image file not found:', filePath);
-                throw new Error('Image file not found');
-            }
-
-            const form = new FormData();
-            form.append('sender', messageData.sender);
-            form.append('conversationId', messageData.conversationId || messageData.sender || 'Guest');
-            form.append('text', messageData.text);
-            form.append('timestamp', messageData.timestamp);
-            form.append('messageId', messageData.messageId);
-            form.append('file_type', messageData.file_type);
-            form.append('file_name', messageData.file_name);
-            form.append('hasFile', 'true');
-            form.append('image', fs.createReadStream(filePath), {
-                filename: messageData.file_name || 'uploaded_image',
-                contentType: messageData.file_type
-            });
-
-            response = await axios.post(N8N_WEBHOOK_URL, form, {
-                headers: form.getHeaders(),
-                timeout: 10000
-            });
-        } else {
-            const payload = {
-                sender: messageData.sender,
-                conversationId: messageData.conversationId || messageData.sender || 'Guest',
-                text: messageData.text,
-                file_url: messageData.file_url,
-                file_type: messageData.file_type,
-                file_name: messageData.file_name,
-                timestamp: messageData.timestamp,
-                messageId: messageData.messageId,
-                hasFile: !!messageData.file_url
-            };
-
-            console.log('🟡 sendToN8n POST payload:', payload);
-
-            response = await axios.post(N8N_WEBHOOK_URL, payload, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 10000
-            });
-        }
-
-        console.log(`📤 Message sent to n8n from ${messageData.sender}: "${messageData.text.substring(0, 50)}${messageData.text.length > 50 ? '...' : ''}"`);
+        n8nConnected = true;
         return response.data;
     } catch (error) {
         console.error('❌ Error sending to n8n:', error.response?.data || error.message);
@@ -434,7 +574,6 @@ app.get('/api/n8n-status', (req, res) => {
 });
 
 app.post('/api/reconnect-n8n', async (req, res) => {
-    console.log('🔄 Manual reconnection triggered...');
     n8nConnected = false;
     await initializeN8nConnection();
 
@@ -476,11 +615,16 @@ app.post('/api/chat-memory/save-turn', (req, res) => {
             sessionId,
             user_message,
             assistant_message,
+            user_query = null,
             intent = null,
             matched_issue = null,
             issue_summary = null,
+            attachment_summary = null,
             ticket_id = null,
-            messageId = null
+            messageId = null,
+            file_url = null,
+            file_type = null,
+            file_name = null
         } = req.body;
 
         const key = conversationId || sessionId;
@@ -493,16 +637,24 @@ app.post('/api/chat-memory/save-turn', (req, res) => {
             chatMemoryStore[key] = [];
         }
 
+        const now = new Date().toISOString();
+
         if (user_message) {
             chatMemoryStore[key].push({
                 role: 'user',
                 message_text: user_message,
+                user_message,
+                user_query: user_query || user_message,
                 intent,
                 matched_issue,
                 issue_summary,
+                attachment_summary,
                 ticket_id,
                 messageId,
-                created_at: new Date().toISOString()
+                file_url,
+                file_type,
+                file_name,
+                created_at: now
             });
         }
 
@@ -510,12 +662,17 @@ app.post('/api/chat-memory/save-turn', (req, res) => {
             chatMemoryStore[key].push({
                 role: 'assistant',
                 message_text: assistant_message,
+                assistant_message,
                 intent,
                 matched_issue,
                 issue_summary,
+                attachment_summary,
                 ticket_id,
                 messageId,
-                created_at: new Date().toISOString()
+                file_url,
+                file_type,
+                file_name,
+                created_at: now
             });
         }
 
@@ -548,6 +705,83 @@ app.get('/api/chat-memory/:conversationId', (req, res) => {
     }
 });
 
+// -------------------- TEAMS THREAD MAPPING ROUTES --------------------
+
+app.post('/api/teams/register-thread', (req, res) => {
+    try {
+        const { teamsMessageId, conversationId, ticket_id = null } = req.body || {};
+
+        if (!teamsMessageId || !conversationId) {
+            return res.status(400).json({
+                success: false,
+                error: 'teamsMessageId and conversationId are required'
+            });
+        }
+
+        teamsThreadMap[String(teamsMessageId)] = {
+            teamsMessageId: String(teamsMessageId),
+            conversationId,
+            ticket_id
+        };
+
+        console.log('✅ Registered Teams thread mapping:', {
+            teamsMessageId,
+            conversationId,
+            ticket_id
+        });
+
+        return res.json({
+            success: true,
+            data: teamsThreadMap[String(teamsMessageId)]
+        });
+    } catch (error) {
+        console.error('❌ Error registering thread:', error.message);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/teams/resolve-conversation', (req, res) => {
+    try {
+        const { replyToMessageId, teamsMessageId } = req.body || {};
+        const key = String(replyToMessageId || teamsMessageId || '');
+
+        console.log('\n===== /api/teams/resolve-conversation HIT =====');
+        console.log('Body:', JSON.stringify(req.body, null, 2));
+        console.log('Lookup key:', key);
+        console.log('Available teamsThreadMap keys:', Object.keys(teamsThreadMap));
+
+        if (!key) {
+            return res.status(400).json({
+                success: false,
+                error: 'replyToMessageId or teamsMessageId required'
+            });
+        }
+
+        const mapping = teamsThreadMap[key];
+
+        if (!mapping) {
+            console.log('❌ Mapping not found for key:', key);
+            return res.status(404).json({
+                success: false,
+                error: 'Mapping not found',
+                lookupKey: key
+            });
+        }
+
+        console.log('✅ Mapping found:', mapping);
+
+        return res.json({
+            success: true,
+            conversationId: mapping.conversationId,
+            ticket_id: mapping.ticket_id || null,
+            teamsMessageId: mapping.teamsMessageId || key
+        });
+    } catch (error) {
+        console.error('❌ Error resolving conversation:', error.message);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // -------------------- RESPONSE ROUTES --------------------
 
 app.get('/api/send-response', (req, res) => {
@@ -555,7 +789,13 @@ app.get('/api/send-response', (req, res) => {
         const responseData = req.query;
         const messageText = responseData.response || responseData.message;
 
+        console.log('\n================ GET /api/send-response HIT ================');
+        console.log('Time:', new Date().toISOString());
+        console.log('Raw Query:', JSON.stringify(responseData, null, 2));
+
         if (!messageText) {
+            console.log('❌ Missing response/message in query');
+            console.log('============================================================\n');
             return res.status(400).json({ error: 'Missing response or message query param' });
         }
 
@@ -564,18 +804,23 @@ app.get('/api/send-response', (req, res) => {
             sender: responseData.sender || responseData.source || 'AI Assistant',
             timestamp: new Date().toISOString(),
             text: messageText,
-            messageId: responseData.messageId || `resp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            messageId: responseData.messageId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
             originalMessageId: responseData.originalMessageId || null,
             category: responseData.category || null,
-            conversationId: responseData.conversationId || null
+            conversationId: responseData.conversationId || null,
+            ticket_id: responseData.ticket_id || null
         };
 
+        console.log('✅ GET responseMessage:', JSON.stringify(responseMessage, null, 2));
+
         messages.push(responseMessage);
+
         if (responseMessage.conversationId) {
             io.to(responseMessage.conversationId).emit('responseMessage', responseMessage);
+            console.log('📡 Emitted GET responseMessage to room:', responseMessage.conversationId);
         }
 
-        console.log(`📥 GET response received: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
+        console.log('============================================================\n');
 
         res.json({
             success: true,
@@ -590,25 +835,83 @@ app.get('/api/send-response', (req, res) => {
 
 app.post('/api/send-response', (req, res) => {
     try {
-        const responseData = req.body;
-        const messageText = responseData.response || responseData.message;
+        sendResponseHitCount++;
+
+        const responseData = req.body || {};
+
+        // Accept multiple possible field names safely
+        const messageText =
+            responseData.replyText ||
+            responseData.response ||
+            responseData.message ||
+            null;
+
+        const teamsMessageId = responseData.teamsMessageId || null;
+        const replyToMessageId = responseData.replyToMessageId || null;
+        const conversationId = responseData.conversationId || null;
+        const sender = responseData.sender || responseData.source || 'AI Assistant';
+
+        // Use the actual reply message id for dedupe.
+        // Do NOT use replyToMessageId as primary dedupe key because all replies in the same thread
+        // can share the same parent id.
+        const dedupeKey = teamsMessageId
+            ? `${conversationId || 'no-conv'}::${teamsMessageId}`
+            : `${conversationId || 'no-conv'}::${messageText || 'no-message'}::${replyToMessageId || 'no-parent'}`;
+
+        console.log('\n================ POST /api/send-response HIT ================');
+        console.log('Hit #:', sendResponseHitCount);
+        console.log('Time:', new Date().toISOString());
+        console.log('Sender:', sender);
+        console.log('Conversation ID:', conversationId);
+        console.log('Teams Message ID:', teamsMessageId);
+        console.log('Reply To Message ID:', replyToMessageId);
+        console.log('Message Text:', messageText);
+        console.log('Dedupe Key:', dedupeKey);
+        console.log('Raw Body:', JSON.stringify(responseData, null, 2));
 
         if (!messageText) {
-            return res.status(400).json({ error: 'Missing response or message field' });
+            console.log('❌ Missing reply text in body');
+            console.log('=============================================================\n');
+            return res.status(400).json({
+                success: false,
+                error: 'Missing replyText, response, or message field'
+            });
         }
+
+        if (processedTeamsReplies.has(dedupeKey)) {
+            console.log('⚠️ DUPLICATE DETECTED -> ignoring');
+            console.log('=============================================================\n');
+            return res.json({
+                success: true,
+                ignored: true,
+                reason: 'duplicate reply ignored'
+            });
+        }
+
+        processedTeamsReplies.set(dedupeKey, Date.now());
+
+        setTimeout(() => {
+            processedTeamsReplies.delete(dedupeKey);
+        }, 10 * 60 * 1000);
 
         const responseMessage = {
             type: 'response',
-            sender: responseData.sender || responseData.source || 'AI Assistant',
+            sender,
             timestamp: new Date().toISOString(),
             text: messageText,
-            messageId: responseData.messageId || `resp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            originalMessageId: responseData.originalMessageId || null,
+            messageId: responseData.messageId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+            originalMessageId: responseData.originalMessageId || replyToMessageId || null,
             category: responseData.category || null,
-            conversationId: responseData.conversationId || null
+            conversationId,
+            ticket_id: responseData.ticket_id || null,
+            teamsMessageId,
+            replyToMessageId
         };
 
+        console.log('✅ Creating POST responseMessage:', JSON.stringify(responseMessage, null, 2));
+
         messages.push(responseMessage);
+        console.log('Messages array length:', messages.length);
 
         if (responseMessage.conversationId) {
             if (!conversationMessagesStore[responseMessage.conversationId]) {
@@ -618,35 +921,80 @@ app.post('/api/send-response', (req, res) => {
             conversationMessagesStore[responseMessage.conversationId].push({
                 role: 'assistant',
                 message_text: messageText,
+                assistant_message: messageText,
                 matched_issue: responseData.category || null,
                 ticket_id: responseData.ticket_id || null,
+                teamsMessageId,
+                replyToMessageId,
                 messageId: responseMessage.messageId,
                 created_at: responseMessage.timestamp
             });
 
+            console.log(
+                'Conversation message count for',
+                responseMessage.conversationId,
+                ':',
+                conversationMessagesStore[responseMessage.conversationId].length
+            );
+
             updateConversation(responseMessage.conversationId, {
                 preview: messageText
             });
-        }
 
-        if (responseMessage.conversationId) {
+            console.log('📡 Emitting POST responseMessage to room:', responseMessage.conversationId);
             io.to(responseMessage.conversationId).emit('responseMessage', responseMessage);
         }
 
-        console.log(`📥 POST response received from n8n: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
+        console.log('=============================================================\n');
 
-        res.json({
+        return res.json({
             success: true,
+            ignored: false,
             messageId: responseMessage.messageId,
             data: responseMessage
         });
     } catch (error) {
         console.error('❌ Error processing POST response:', error.message);
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// -------------------- TICKET ROUTE --------------------
+app.get('/api/debug/send-response-stats', (req, res) => {
+    res.json({
+        sendResponseHitCount,
+        processedTeamsRepliesSize: processedTeamsReplies.size,
+        processedTeamsRepliesKeys: [...processedTeamsReplies.keys()]
+    });
+});
+
+// -------------------- TICKET ROUTES --------------------
+
+app.post('/api/tickets/escalation-due', (req, res) => {
+    try {
+        const { days_without_response = 0 } = req.body || {};
+        const now = Date.now();
+
+        const dueTickets = Object.values(ticketsStore).filter(ticket => {
+            if (ticket.status === 'resolved') return false;
+
+            const lastTime = ticket.last_response_at
+                ? new Date(ticket.last_response_at).getTime()
+                : new Date(ticket.created_at).getTime();
+
+            const diffMs = now - lastTime;
+            return diffMs >= days_without_response * 24 * 60 * 60 * 1000;
+        });
+
+        res.json({
+            success: true,
+            count: dueTickets.length,
+            tickets: dueTickets
+        });
+    } catch (error) {
+        console.error('❌ Error fetching escalation tickets:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 app.post('/api/tickets', (req, res) => {
     try {
@@ -656,33 +1004,122 @@ app.post('/api/tickets', (req, res) => {
             return res.status(400).json({ error: 'Missing ticket_title or ticket_description' });
         }
 
+        const now = new Date().toISOString();
         const ticket = {
-            id: `ticket_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            id: `ticket_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
             title: ticketData.ticket_title,
             description: ticketData.ticket_description,
             priority: ticketData.priority || 'Medium',
             status: ticketData.status || 'open',
             assigned_to: ticketData.assigned_to || 'support_team',
-            created_at: new Date().toISOString(),
-            category: ticketData.category || null
+            created_at: now,
+            updated_at: now,
+            last_response_at: null,
+            escalated_at: null,
+            escalation_level: 0,
+            category: ticketData.category || null,
+            conversationId:
+                ticketData.conversationId ||
+                ticketData.created_from_conversation ||
+                null
         };
-
-        console.log('🎫 New support ticket created:', {
-            id: ticket.id,
-            title: ticket.title,
-            priority: ticket.priority,
-            assigned_to: ticket.assigned_to
-        });
+        ticketsStore[ticket.id] = ticket;
 
         res.json({
             success: true,
             ticket_id: ticket.id,
-            message: 'Ticket created successfully'
+            message: 'Ticket created successfully',
+            data: ticket
         });
     } catch (error) {
         console.error('❌ Error creating ticket:', error.message);
         res.status(500).json({ error: 'Internal server error' });
     }
+});
+
+app.get('/api/tickets', (req, res) => {
+    res.json(Object.values(ticketsStore));
+});
+
+app.get('/api/tickets/:ticketId/status', (req, res) => {
+    const ticket = ticketsStore[req.params.ticketId];
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    res.json({
+        ticket_id: ticket.id,
+        status: ticket.status,
+        escalation_level: ticket.escalation_level,
+        created_at: ticket.created_at,
+        updated_at: ticket.updated_at,
+        last_response_at: ticket.last_response_at,
+        escalated_at: ticket.escalated_at,
+        assigned_to: ticket.assigned_to
+    });
+});
+
+app.post('/api/tickets/mark-escalated', (req, res) => {
+    try {
+        const { ticket_id, escalated = true, escalated_at = null } = req.body || {};
+
+        if (!ticket_id) {
+            return res.status(400).json({ error: 'ticket_id is required' });
+        }
+
+        const ticket = ticketsStore[ticket_id];
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found' });
+        }
+
+        if (escalated) {
+            applyEscalation(ticket, escalated_at);
+        }
+
+        res.json({
+            success: true,
+            message: 'Ticket marked as escalated',
+            data: ticket
+        });
+    } catch (error) {
+        console.error('❌ Error marking ticket escalated:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.patch('/api/tickets/:ticketId', (req, res) => {
+    const ticket = ticketsStore[req.params.ticketId];
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    const { status, assigned_to, priority } = req.body || {};
+
+    if (status) ticket.status = status;
+    if (assigned_to) ticket.assigned_to = assigned_to;
+    if (priority) ticket.priority = priority;
+
+    ticket.updated_at = new Date().toISOString();
+    ticket.last_response_at = new Date().toISOString();
+
+    res.json({
+        success: true,
+        data: ticket
+    });
+});
+
+app.patch('/api/tickets/:ticketId/escalate', (req, res) => {
+    const ticket = ticketsStore[req.params.ticketId];
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    applyEscalation(ticket);
+
+    res.json({
+        success: true,
+        message: 'Ticket escalated successfully',
+        data: ticket
+    });
+});
+
+app.post('/api/tickets/recheck', (req, res) => {
+    escalateOldTickets(0);
+    res.json({ success: true });
 });
 
 // -------------------- CONVERSATION ROUTES --------------------
@@ -754,7 +1191,7 @@ app.post('/api/conversations/:conversationId/messages', (req, res) => {
             intent,
             matched_issue,
             ticket_id,
-            messageId: messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            messageId: messageId || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
             created_at: new Date().toISOString()
         };
 
@@ -798,11 +1235,92 @@ app.patch('/api/conversations/:conversationId', (req, res) => {
     }
 });
 
+app.post('/api/tickets/followup', (req, res) => {
+    try {
+        const {
+            ticket_id,
+            conversationId = null,
+            latest_user_message = '',
+            previous_ticket_description = '',
+            merged_description = '',
+            assigned_to = null,
+            assigned_to_name = null,
+            category = 'followup_support'
+        } = req.body || {};
+
+        if (!ticket_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'ticket_id is required'
+            });
+        }
+
+        const ticket = ticketsStore[ticket_id];
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                error: 'Ticket not found'
+            });
+        }
+
+        const oldDescription = previous_ticket_description || ticket.description || '';
+        const newDescription =
+            merged_description ||
+            [
+                oldDescription ? `Previous Ticket Description: ${oldDescription}` : '',
+                latest_user_message ? `Latest User Follow-Up: ${latest_user_message}` : ''
+            ].filter(Boolean).join('\n\n');
+
+        ticket.previous_ticket_description = oldDescription;
+        ticket.latest_user_message = latest_user_message || '';
+        ticket.description = newDescription;
+        ticket.category = category || ticket.category || 'followup_support';
+        ticket.conversationId = conversationId || ticket.conversationId || null;
+        ticket.status = 'existing_ticket_followup';
+        ticket.updated_at = new Date().toISOString();
+        ticket.last_response_at = new Date().toISOString();
+
+        if (assigned_to) ticket.assigned_to = assigned_to;
+        if (assigned_to_name) ticket.assigned_to_name = assigned_to_name;
+
+        if (!ticket.followups) ticket.followups = [];
+        ticket.followups.push({
+            message: latest_user_message || '',
+            created_at: new Date().toISOString()
+        });
+
+        return res.json({
+            success: true,
+            message: 'Follow-up saved successfully',
+            ticket_id: ticket.id,
+            data: ticket
+        });
+    } catch (error) {
+        console.error('❌ Error saving follow-up ticket:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+// -------------------- TICKET ESCALATION TIMER --------------------
+
+setInterval(() => {
+    escalateOldTickets(2);
+}, 10000);
+
 // -------------------- START SERVER --------------------
 
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Chat Support System running on http://localhost:${PORT}`);
-    console.log(`📡 Connecting to n8n workflow: ${N8N_WEBHOOK_URL}\n`);
-
+    console.log(`🚀 Chat Support System running on http://localhost:${PORT}`);
+    console.log(`📡 n8n webhook: ${N8N_WEBHOOK_URL}`);
     initializeN8nConnection();
+});
+
+app.get('/api/debug/teams-thread-map', (req, res) => {
+    res.json({
+        success: true,
+        teamsThreadMap
+    });
 });

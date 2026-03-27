@@ -1,19 +1,50 @@
 {
-    "name": "Chat Support - Intent + Memory + KB",
+    "name": "My workflow",
     "nodes": [
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/extract-attachment-text",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ {\n  \"file_url\": $json.file_url || \"\",\n  \"file_type\": $json.file_type || \"\",\n  \"file_name\": $json.file_name || \"\"\n} }}",
+                "options": {}
+            },
+            "id": "1de8d9e6-0eb6-4b1a-8863-e4a30f0f462b",
+            "name": "Extract Attachment Text1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -3680,
+                208
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const original = $('Build Conversation Context2').first().json;\nconst extracted = $input.first().json || {};\n\nreturn [{\n  json: {\n    ...original,\n    attachment_text: extracted.attachment_text || '',\n    attachment_summary: extracted.attachment_summary || '',\n    attachment_extraction_method: extracted.extraction_method || 'none'\n  }\n}];"
+            },
+            "id": "cb8d9096-65aa-4649-ac68-bae30096af37",
+            "name": "Merge Attachment Context1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -3456,
+                272
+            ]
+        },
         {
             "parameters": {
                 "httpMethod": "POST",
                 "path": "chat-support",
                 "options": {}
             },
-            "id": "7d95d768-3be8-4706-96d7-9593774c8a5e",
-            "name": "Webhook1",
+            "id": "28816e5c-006b-4704-8410-c7d5293cea20",
+            "name": "Webhook2",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 1,
             "position": [
-                -832,
-                12144
+                -5248,
+                272
             ],
             "webhookId": "chat-support-webhook"
         },
@@ -21,26 +52,26 @@
             "parameters": {
                 "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\n\nconst text = String(body.text || '').trim();\nconst sender = body.sender || 'Unknown';\nconst conversationId = body.conversationId || body.sessionId || body.userId || body.sender || `conv_${Date.now()}`;\nconst history = Array.isArray(body.history) ? body.history : [];\n\nconst fileUrl = body.file_url || null;\nconst fileType = body.file_type || '';\nconst fileName = body.file_name || '';\n\nconst hasPdf = fileType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');\nconst hasImage = fileType.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].some(ext => fileName.toLowerCase().endsWith(ext));\nconst hasAttachment = Boolean(fileUrl || hasPdf || hasImage);\n\nreturn [{\n  json: {\n    sender,\n    conversationId,\n    message: text,\n    history,\n    file_url: fileUrl,\n    file_type: fileType,\n    file_name: fileName,\n    hasPdf,\n    hasImage,\n    hasAttachment,\n    messageId: body.messageId || '',\n    timestamp: body.timestamp || new Date().toISOString()\n  }\n}];"
             },
-            "id": "6e35c755-8137-43ae-a5a8-1a30184624fc",
-            "name": "Extract Message Data1",
+            "id": "29eee580-7f2a-4e18-be6c-d31332e1a46e",
+            "name": "Extract Message Data2",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -608,
-                12144
+                -5024,
+                272
             ]
         },
         {
             "parameters": {
                 "jsCode": "const data = $input.first().json;\nconst normalizedText = (data.message || '').toLowerCase().trim().replace(/\\s+/g, ' ');\nconst errorMatch = normalizedText.match(/\\b(400|401|403|404|408|409|429|500|502|503|504)\\b/);\n\nlet attachmentHint = 'none';\nif (data.hasPdf) attachmentHint = 'pdf';\nelse if (data.hasImage) attachmentHint = 'image';\n\nreturn [{\n  json: {\n    ...data,\n    normalizedText,\n    possibleErrorCode: errorMatch ? errorMatch[1] : null,\n    attachmentHint,\n    isEmptyMessage: !normalizedText && !data.hasAttachment\n  }\n}];"
             },
-            "id": "93e418a3-eff0-44bc-8722-4de52cac5b42",
-            "name": "Normalize Input",
+            "id": "658778d4-b547-40ef-9559-66f3a0ca40c1",
+            "name": "Normalize Input2",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -384,
-                12216
+                -4800,
+                352
             ]
         },
         {
@@ -52,13 +83,13 @@
                 "jsonBody": "={\n  \"conversationId\": \"{{ $json.conversationId }}\",\n  \"limit\": 20\n}",
                 "options": {}
             },
-            "id": "02f18fda-4499-4639-84a6-b5ed06b275f6",
-            "name": "Load Memory",
+            "id": "b7ec6141-ab1e-46a6-96c8-86367c43765c",
+            "name": "Load Memory2",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                -160,
-                12216
+                -4576,
+                352
             ]
         },
         {
@@ -67,57 +98,26 @@
                 "combineBy": "combineAll",
                 "options": {}
             },
-            "id": "6ed70a8c-270d-4fd0-ac60-cb936176a8fe",
-            "name": "Merge Input + Memory",
+            "id": "41480662-576a-410d-9a61-089764752672",
+            "name": "Merge Input + Memory2",
             "type": "n8n-nodes-base.merge",
             "typeVersion": 3.2,
             "position": [
-                64,
-                12144
+                -4352,
+                272
             ]
         },
         {
             "parameters": {
-                "jsCode": "const item = $input.first().json;\n\nconst messagesRaw = item.messages || item.data?.messages || item.memory || item.chat_memory || [];\nconst memoryRows = Array.isArray(messagesRaw) ? messagesRaw : [];\n\nfunction extractTicketId(text) {\n  if (!text) return null;\n  const match = String(text).match(/ticket[_\\-\\s]?id[:\\s]+(ticket_[a-zA-Z0-9_-]+)/i);\n  return match ? match[1] : null;\n}\n\nconst historyFromDb = memoryRows.map(row => {\n  const text = row.message_text || row.text || '';\n  const matchedIssue = row.matched_issue || null;\n  const explicitTicketId = row.ticket_id || null;\n  const textTicketId = extractTicketId(text);\n\n  const trustedTicketId =\n    matchedIssue === 'manual_ticket' ||\n    matchedIssue === 'existing_ticket_reused' ||\n    /support ticket/i.test(text) ||\n    /ticket id/i.test(text)\n      ? (explicitTicketId || textTicketId)\n      : null;\n\n  return {\n    role: row.role || 'user',\n    text,\n    intent: row.intent || null,\n    matched_issue: matchedIssue,\n    issue_summary: row.issue_summary || null,\n    attachment_summary: row.attachment_summary || null,\n    ticket_id: trustedTicketId,\n    created_at: row.created_at || null\n  };\n}).filter(x => x.text);\n\nconst incomingHistory = Array.isArray(item.history) ? item.history : [];\nconst history = historyFromDb.length > 0 ? historyFromDb : incomingHistory;\n\nlet latestTicketEntry = null;\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  if (\n    h.ticket_id &&\n    (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n  ) {\n    latestTicketEntry = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    history,\n    latest_ticket_id: latestTicketEntry ? latestTicketEntry.ticket_id : null,\n    latest_ticket_message: latestTicketEntry ? latestTicketEntry.text : null,\n    has_existing_ticket: !!latestTicketEntry\n  }\n}];"
+                "jsCode": "const item = $input.first().json;\n\nconst messagesRaw = item.messages || item.data?.messages || item.memory || item.chat_memory || [];\nconst memoryRows = Array.isArray(messagesRaw) ? messagesRaw : [];\n\nfunction extractTicketId(text) {\n  if (!text) return null;\n  const match = String(text).match(/ticket[_\\-\\s]?id[:\\s]+(ticket_[a-zA-Z0-9_-]+)/i);\n  return match ? match[1] : null;\n}\n\nconst historyFromDb = memoryRows.map(row => {\n  const userText =\n    row.role === 'user'\n      ? (row.user_query || row.user_message || row.message_text || row.text || '')\n      : '';\n\n  const assistantText =\n    row.role === 'assistant'\n      ? (row.assistant_message || row.message_text || row.text || '')\n      : '';\n\n  const matchedIssue = row.matched_issue || null;\n  const explicitTicketId = row.ticket_id || null;\n  const textTicketId = extractTicketId(userText || assistantText);\n\n  const trustedTicketId =\n    matchedIssue === 'manual_ticket' ||\n    matchedIssue === 'existing_ticket_reused' ||\n    /support ticket/i.test(userText || assistantText) ||\n    /ticket id/i.test(userText || assistantText)\n      ? (explicitTicketId || textTicketId)\n      : null;\n\n  return {\n    role: row.role || 'user',\n    text: row.role === 'user' ? userText : assistantText,\n    message: row.role === 'user' ? userText : assistantText,\n    user_message: row.role === 'user' ? (row.user_message || row.user_query || row.message_text || '') : '',\n    user_query: row.role === 'user' ? (row.user_query || row.user_message || row.message_text || '') : '',\n    assistant_message: row.role === 'assistant' ? (row.assistant_message || row.message_text || '') : '',\n    intent: row.intent || null,\n    matched_issue: matchedIssue,\n    issue_summary: row.issue_summary || null,\n    attachment_summary: row.attachment_summary || null,\n    ticket_id: trustedTicketId,\n    file_url: row.file_url || null,\n    file_type: row.file_type || null,\n    file_name: row.file_name || null,\n    created_at: row.created_at || null\n  };\n}).filter(x => x.user_message || x.assistant_message || x.attachment_summary);\n\nconst incomingHistory = Array.isArray(item.history) ? item.history : [];\nconst history = historyFromDb.length > 0 ? historyFromDb : incomingHistory;\n\nlet latestTicketEntry = null;\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  if (\n    h.ticket_id &&\n    (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n  ) {\n    latestTicketEntry = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    history,\n    latest_ticket_id: latestTicketEntry ? latestTicketEntry.ticket_id : null,\n    latest_ticket_message: latestTicketEntry ? (latestTicketEntry.user_message || latestTicketEntry.assistant_message || latestTicketEntry.text) : null,\n    has_existing_ticket: !!latestTicketEntry\n  }\n}];"
             },
-            "id": "1164733b-8a30-456f-a2ea-4270e861c584",
-            "name": "Build Conversation Context",
+            "id": "99383e10-6353-4327-9319-c49a4ac55a80",
+            "name": "Build Conversation Context2",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                288,
-                12144
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/extract-attachment-text",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ {\n  \"file_url\": $json.file_url || \"\",\n  \"file_type\": $json.file_type || \"\",\n  \"file_name\": $json.file_name || \"\"\n} }}",
-                "options": {}
-            },
-            "id": "d4db24e0-ocr-http-node",
-            "name": "Extract Attachment Text",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                512,
-                12144
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const original = $('Build Conversation Context').first().json;\nconst extracted = $input.first().json || {};\n\nreturn [{\n  json: {\n    ...original,\n    attachment_text: extracted.attachment_text || '',\n    attachment_summary: extracted.attachment_summary || '',\n    attachment_extraction_method: extracted.extraction_method || 'none'\n  }\n}];"
-            },
-            "id": "7f8bce2d-merge-attachment-context",
-            "name": "Merge Attachment Context",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                736,
-                12144
+                -4128,
+                272
             ]
         },
         {
@@ -144,26 +144,26 @@
                 },
                 "options": {}
             },
-            "id": "67dc2578-a7e6-470f-ae1b-5fa3328dea53",
-            "name": "Empty Message?",
+            "id": "edb252da-d902-41b3-97e8-ca0e2765770f",
+            "name": "Empty Message?2",
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                960,
-                12144
+                -3232,
+                272
             ]
         },
         {
             "parameters": {
                 "jsCode": "return [{\n  json: {\n    ...$json,\n    apiPayload: {\n      response: 'Please type your issue or upload a screenshot/PDF so I can help you.',\n      sender: 'AI Assistant',\n      category: 'empty_message',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
             },
-            "id": "4a0419db-2258-4870-963c-fc14759454d8",
-            "name": "Prepare Empty Response",
+            "id": "4aa9a83a-25f0-45ba-8802-b6860b73755d",
+            "name": "Prepare Empty Response2",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1248,
-                12048
+                -3008,
+                176
             ]
         },
         {
@@ -175,60 +175,123 @@
                 "jsonBody": "={{ $json.apiPayload }}",
                 "options": {}
             },
-            "id": "534b11c3-d52e-4fbb-a554-eb029096bcf6",
-            "name": "Send Empty Response",
+            "id": "35991d35-74ba-4b80-a942-618359f70bad",
+            "name": "Send Empty Response4",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                1536,
-                12048
+                -2784,
+                176
             ]
         },
         {
             "parameters": {
-                "modelId": {
-                    "__rl": true,
-                    "value": "models/gemini-3-flash-preview",
-                    "mode": "list",
-                    "cachedResultName": "models/gemini-3-flash-preview"
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "content": "=You are an intent classifier for a customer support chatbot.\n\nClassify the user's latest message into exactly one of these intents:\n- greeting_or_ack\n- error_code_issue\n- general_issue\n- follow_up\n- issue_recall\n- gibberish\n- unclear\n\nRules:\n\ngreeting_or_ack:\nmessages that are greetings or acknowledgements such as:\n\"hi\", \"hello\", \"hey\", \"hii\", \"heyy\", \"gm\", \"good morning\", \"good evening\", \"yo\", \"sup\",\n\"thanks\", \"thank you\", \"thx\", \"ok\", \"okay\", \"cool\", \"got it\", \"alright\", \"sure\", \"noted\".\n\nerror_code_issue:\nmessage contains a specific error/status code like:\n404, 401, 403, 500, 503\nor clearly refers to such an error.\n\ngeneral_issue:\na support issue/query that is not just a greeting and is not clearly a follow-up-only message.\n\nfollow_up:\nuser continues an earlier issue such as:\n\"still not working\"\n\"same issue\"\n\"what now\"\n\"not resolved yet\"\n\"did you fix it\"\n\"any update\"\n\nissue_recall:\nuser is asking about the problem they mentioned earlier such as:\n\"what issue did I report\"\n\"what problem did I mention earlier\"\n\"what error did I say before\"\n\"remind me the issue\"\n\"what was my issue\"\n\ngibberish:\nmessage is meaningless, random characters, keyboard mash, broken words, or does not form a request.\nexamples:\n\"asdjkh123\"\n\"xxxyyyzzz\"\n\"qwertyuiop\"\n\".....\"\n\"efhosefho\"\n\nunclear:\nmessage is extremely vague but still may be a human request such as:\n\"help\"\n\"issue\"\n\"problem\"\n\"check this\"\n\nImportant:\nIf the attachment_summary contains the main problem and the user text is short like \"see this\", \"check screenshot\", \"this issue\", then classify using the attachment_summary too.\n\nReturn ONLY valid JSON in this format:\n{\n  \"intent\": \"greeting_or_ack | error_code_issue | general_issue | follow_up | issue_recall | gibberish | unclear\",\n  \"confidence\": 0.0,\n  \"error_code\": \"string or null\",\n  \"needs_ocr\": true,\n  \"direct_reply\": \"string or null\",\n  \"normalized_user_need\": \"string\",\n  \"needs_ticket\": false\n}\n\nAdditional rules:\n- If the message is greeting_or_ack, set direct_reply to a friendly short response.\n- If the intent is not greeting_or_ack, set direct_reply to null.\n- If there is a clear error code, extract it into error_code.\n- If there is an attachment and the issue may depend on it, set needs_ocr to true.\n- If the message is gibberish, set normalized_user_need to \"Unintelligible or meaningless input\".\n- Use conversation history only when the latest message clearly refers to something earlier.\n- If the main issue is visible in the attachment_summary, use it in normalized_user_need.\n- Do not answer the user's problem here except for greeting_or_ack messages.\n- Output JSON only, no markdown.\n\nInput:\n{{ JSON.stringify({\n  message: $json.message,\n  normalizedText: $json.normalizedText,\n  possibleErrorCode: $json.possibleErrorCode,\n  hasAttachment: $json.hasAttachment,\n  attachmentHint: $json.attachmentHint,\n  attachment_text: $json.attachment_text,\n  attachment_summary: $json.attachment_summary,\n  history: ($json.history || []).slice(-6)\n}) }}"
-                        }
-                    ]
-                },
-                "builtInTools": {},
-                "options": {}
+                "jsCode": "let reply = '';\n\nif ($json.fast_intent === 'greeting') {\n  reply = 'Hello! How can I help you today?';\n} else if ($json.fast_intent === 'acknowledgement') {\n  reply = 'You’re welcome. Let me know if you need anything else.';\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    intent: $json.fast_intent,\n    matched_issue: $json.fast_intent\n  }\n}];"
             },
-            "id": "c04f26f5-88e3-4ed8-9442-d9c2adc9330a",
-            "name": "Intent Classifier",
-            "type": "@n8n/n8n-nodes-langchain.googleGemini",
-            "typeVersion": 1.1,
-            "position": [
-                1184,
-                12240
-            ],
-            "credentials": {
-                "googlePalmApi": {
-                    "id": "VU4lYlt9NwCfUiPY",
-                    "name": "Google Gemini(PaLM) Api account 7"
-                }
-            }
-        },
-        {
-            "parameters": {
-                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Merge Attachment Context').first().json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
-            },
-            "id": "3acd8c91-f3bb-4724-bbfa-fa5761f13ab2",
-            "name": "Parse Intent",
+            "id": "5e181ae3-f66f-45ae-a901-1833e3c91875",
+            "name": "Prepare Greeting Response2",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1536,
-                12240
+                -2496,
+                272
             ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "db973d85-fb38-4787-b527-5464a4623a3b",
+            "name": "Send Greeting Response2",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -2208,
+                176
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    user_query: $json.message || '',\n    intent: $json.parsed_intent?.intent || 'greeting_or_ack',\n    matched_issue: 'greeting_or_ack',\n    issue_summary: null,\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || '',\n    file_url: $json.file_url || null,\n    file_type: $json.file_type || null,\n    file_name: $json.file_name || null\n  }\n}];"
+            },
+            "id": "1349735d-39e9-4163-b186-f76929fd4588",
+            "name": "Prepare Greeting Memory2",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -2208,
+                368
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "2b6be321-d258-434c-9888-0581065ae7ae",
+            "name": "Save Greeting Memory2",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1984,
+                368
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "15be7c0b-d85e-434e-90a2-d6ddc9ce02fc",
+                            "leftValue": "={{ $json.hasAttachment }}",
+                            "rightValue": false,
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "true",
+                                "singleValue": true
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -3904,
+                272
+            ],
+            "id": "1a7a9156-d078-4d19-b2b6-8bbdedabdec6",
+            "name": "If"
+        },
+        {
+            "parameters": {
+                "jsCode": "let msg = String($json.message || $json.text || '').trim().toLowerCase();\n\n// remove extra spaces\nmsg = msg.replace(/\\s+/g, ' ');\n\n// collapse repeated letters: hiiiiii -> hii, heyyyy -> heyy\nmsg = msg.replace(/([a-z])\\1{2,}/g, '$1$1');\n\n// remove common punctuation noise\nmsg = msg.replace(/[!?.,]+/g, '').trim();\n\nconst greetings = [\n  'hi', 'hii', 'hello', 'hey', 'heyy', 'gm',\n  'good morning', 'good afternoon', 'good evening'\n];\n\nconst acknowledgements = [\n  'ok', 'okay', 'okk', 'thanks', 'thank you', 'thx',\n  'got it', 'cool', 'alright', 'noted', 'fine'\n];\n\nlet fast_intent = 'other';\n\nif (greetings.some(x => msg === x || msg.startsWith(x + ' '))) {\n  fast_intent = 'greeting';\n} else if (acknowledgements.some(x => msg === x || msg.startsWith(x + ' '))) {\n  fast_intent = 'acknowledgement';\n}\n\nreturn [{\n  json: {\n    ...$json,\n    normalized_message: msg,\n    fast_intent\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -3008,
+                368
+            ],
+            "id": "978d631f-f110-423b-8a23-708576b4bc0c",
+            "name": "Greetings classifier"
         },
         {
             "parameters": {
@@ -257,24 +320,24 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2.3,
             "position": [
-                1760,
-                12240
+                -1536,
+                560
             ],
-            "id": "ed3e6be8-7983-46eb-bb37-9bfb415fcd76",
-            "name": "Issue recall handler"
+            "id": "44be0bc6-8ab0-4584-8f0a-5f38daa1f00d",
+            "name": "Issue recall handler1"
         },
         {
             "parameters": {
-                "jsCode": "const history = $json.history || [];\n\nconst lastIssue = history\n  .slice()\n  .reverse()\n  .find(m => {\n    const intent = (m.intent || '').toLowerCase().trim();\n    const issueSummary = (m.issue_summary || '').trim();\n    const matchedIssue = (m.matched_issue || '').toLowerCase().trim();\n\n    return (\n      issueSummary &&\n      intent !== 'greeting_or_ack' &&\n      matchedIssue !== 'greeting_or_ack'\n    );\n  });\n\nlet reply;\n\nif (!lastIssue) {\n  reply = \"I couldn't find any issue you reported earlier.\";\n} else {\n  const issue = lastIssue.issue_summary;\n  const ticket = lastIssue.ticket_id || null;\n\n  reply = `Earlier you reported this issue: \"${issue}\".`;\n\n  if (ticket) {\n    reply += ` A support ticket was created with ID ${ticket}.`;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    final_category: 'issue_recall',\n    conversationId: $json.conversationId || '',\n    messageId: $json.messageId || ''\n  }\n}];"
+                "jsCode": "const history = Array.isArray($json.history) ? $json.history : [];\nconst currentMessage = ($json.message || '').toLowerCase().trim();\n\n// STRICTLY only previous USER messages\nconst userMessages = history\n  .filter(item => item.role === 'user')\n  .map(item => item.user_query || item.user_message || item.message || item.text || '')\n  .filter(Boolean)\n  .filter(msg => msg.toLowerCase().trim() !== currentMessage);\n\nconst lastUserMessage = userMessages[userMessages.length - 1] || '';\n\nfunction extractTopic(text) {\n  const stopWords = [\n    'did','i','ask','anything','something','about','or','related','to','what','was',\n    'the','thing','earlier','before','previously','previous','my','issue'\n  ];\n  return text\n    .toLowerCase()\n    .replace(/[^\\w\\s]/g, ' ')\n    .split(/\\s+/)\n    .filter(word => word && !stopWords.includes(word));\n}\n\nlet answer = \"I could not find anything earlier.\";\n\nif (\n  currentMessage.includes('what did i ask') ||\n  currentMessage.includes('what was my issue') ||\n  currentMessage.includes('what was the thing i asked') ||\n  currentMessage.includes('earlier') ||\n  currentMessage.includes('previous')\n) {\n  if (lastUserMessage) {\n    answer = `You earlier asked: \"${lastUserMessage}\"`;\n  }\n} else if (\n  currentMessage.includes('did i ask') ||\n  currentMessage.includes('related to')\n) {\n  const topicWords = extractTopic(currentMessage);\n\n  const matchedMessage = userMessages.find(msg =>\n    topicWords.some(word => msg.toLowerCase().includes(word))\n  );\n\n  if (matchedMessage) {\n    answer = `Yes, you earlier asked: \"${matchedMessage}\"`;\n  } else {\n    answer = `No, I could not find an earlier user message about that.`;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    answer\n  }\n}];"
             },
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                1984,
-                12528
+                -1312,
+                752
             ],
-            "id": "216ba9f6-28bc-4bae-b14a-64581543d7ed",
-            "name": "Recall node"
+            "id": "ae3ab783-cd3e-4ea9-842b-c34ac4d4d45f",
+            "name": "Recall node1"
         },
         {
             "parameters": {
@@ -282,16 +345,317 @@
                 "url": "http://172.17.0.1:8000/api/send-response",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{ {\n  \"response\": $json.final_response_text || '',\n  \"sender\": \"AI Assistant\",\n  \"category\": $json.final_category || \"issue_recall\",\n  \"originalMessageId\": $json.messageId || \"\",\n  \"conversationId\": $json.conversationId || \"\"\n} }}",
+                "jsonBody": "={{ {\n  \"response\": $json.answer || '',\n  \"sender\": \"AI Assistant\",\n  \"category\": $json.final_category || \"issue_recall\",\n  \"originalMessageId\": $json.messageId || \"\",\n  \"conversationId\": $json.conversationId || \"\"\n} }}",
                 "options": {}
             },
-            "id": "53fdc3b4-a5da-4ea2-ad5b-d1249e35bc5b",
-            "name": "Send Recall Response1",
+            "id": "bc7aca10-502e-4318-a764-6a4161696355",
+            "name": "Send Recall Response",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2208,
-                12528
+                -1088,
+                656
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "c5235986-c19b-42e7-a915-866a1d21d4ce",
+            "name": "Send Gibberish Response1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -800,
+                464
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "e3730a5b-b80c-4241-93bb-88e5654f0c6d",
+                            "leftValue": "={{ $json.parsed_intent.intent }}",
+                            "rightValue": "attachment_info_request",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -1760,
+                752
+            ],
+            "id": "e15158f7-d97c-468b-81d8-b8da13215c0e",
+            "name": "Is attachment info request?1"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{\n  {\n    \"response\": $json.final_response_text || \"\",\n    \"sender\": \"AI Assistant\",\n    \"category\": \"attachment_info_request\",\n    \"originalMessageId\": $json.messageId || \"\",\n    \"conversationId\": $json.conversationId || \"\"\n  }\n}}",
+                "options": {}
+            },
+            "id": "513acb17-5d69-4e84-9509-da88082d0d42",
+            "name": "Send asked information1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -288,
+                1232
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const userMessage = $json.message || '';\nconst assistantMessage = $json.final_response_text || '';\nconst attachmentSummary = $json.attachment_summary || '';\n\nreturn [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: userMessage,\n    assistant_message: assistantMessage,\n    intent: 'attachment_info_request',\n    matched_issue: 'attachment_info_request',\n    issue_summary: assistantMessage || attachmentSummary || userMessage,\n    user_query: userMessage,\n    attachment_summary: attachmentSummary,\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "id": "b82f0cb3-aa82-4215-ad1e-65497695fd29",
+            "name": "Prepare attachment info Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1088,
+                1232
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const attachmentSummary = ($json.attachment_summary || '').trim();\nconst attachmentText = ($json.attachment_text || '').trim();\n\nlet response = '';\n\nif (!attachmentSummary && !attachmentText) {\n  response = 'I could not extract readable content from the attachment. Please upload a clearer image or PDF.';\n} else {\n  response = attachmentSummary || attachmentText.slice(0, 1500);\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: 'attachment_info_request',\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: 'attachment_info_request',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1088,
+                1424
+            ],
+            "id": "76a7b912-ee02-4b4c-b274-643d04a0b051",
+            "name": "Prepare attachment info response1"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "f60d1777-cfa8-4326-9b87-aa9daaf72193",
+            "name": "share requested info1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -800,
+                1424
+            ]
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "models/gemini-3-flash-preview",
+                    "mode": "list",
+                    "cachedResultName": "models/gemini-3-flash-preview"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "=You are an AI assistant helping users understand information from screenshots, images, or PDF attachments in a support chat.\n\nYour job is to extract or answer the user's question using the information available in the attachment text.\n\nYou must prioritize the attachment content over guessing.\n\n------------------------------------------------\n\nConversation ID:\n{{ $json.conversationId }}\n\nUser Question:\n{{ $json.user_message }}\n\nIntent:\n{{ $json.intent }}\n\nIssue Summary:\n{{ $json.issue_summary }}\n\nExtracted Attachment Content:\n{{ $json.attachment_summary }}\n\n------------------------------------------------\n\nInstructions:\n\n1. The user is asking for information from an attachment (image/PDF/screenshot).\n2. Use ONLY the attachment content when answering.\n3. If the user asks for a specific field (like application id, loan number, status, bank name, IFSC, etc), locate that value in the attachment text.\n4. If the field is clearly present, return the exact value.\n5. If the field is not clearly visible, say that the value could not be confidently found.\n6. Do NOT create tickets.\n7. Do NOT mention internal system fields.\n8. Keep the answer short and helpful.\n9. Do NOT hallucinate values.\n10. If the user is asking about pending items, missing steps, blocked fields, or incomplete workflow in the attachment, answer clearly using the attachment content and describe the pending or missing items in simple terms.\n\n------------------------------------------------\n\nReturn ONLY JSON in this format:\n\n{\n  \"response\": \"final message to send to the user\",\n  \"extracted_value\": \"value if found otherwise null\",\n  \"field_name\": \"name of the field extracted if applicable\"\n}\n\n------------------------------------------------\n\nExamples:\n\nUser Question: \"what is my application id\"\nAttachment Text: \"... Application ID : L20260221000513196 ...\"\n\nResponse:\n{\n  \"response\": \"Your Application ID is L20260221000513196.\",\n  \"extracted_value\": \"L20260221000513196\",\n  \"field_name\": \"Application ID\"\n}\n\n------------------------------------------------\n\nIf the attachment content is unclear or does not contain the requested information:\n\n{\n  \"response\": \"I could not clearly find that information in the attachment. Please upload a clearer image or provide more context.\",\n  \"extracted_value\": null,\n  \"field_name\": null\n}"
+                        }
+                    ]
+                },
+                "builtInTools": {},
+                "options": {}
+            },
+            "id": "34f71093-b1c2-4cb2-bc38-04f5248b39ca",
+            "name": "Info search1",
+            "type": "@n8n/n8n-nodes-langchain.googleGemini",
+            "typeVersion": 1.1,
+            "position": [
+                -864,
+                1232
+            ],
+            "credentials": {
+                "googlePalmApi": {
+                    "id": "VU4lYlt9NwCfUiPY",
+                    "name": "Google Gemini(PaLM) Api account 7"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Prepare attachment info Memory').first().json;\n\nconst raw =\n  llmOutput?.content?.parts?.[0]?.text ||\n  llmOutput?.text ||\n  llmOutput?.output ||\n  '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    response: 'I could not clearly find that information in the attachment.',\n    extracted_value: null,\n    field_name: null\n  };\n}\n\nreturn [{\n  json: {\n    conversationId: original.conversationId || '',\n    user_message: original.user_message || '',\n    assistant_message: parsed.response || 'I could not clearly find that information in the attachment.',\n    intent: 'attachment_info_request',\n    matched_issue: 'attachment_info_request',\n    issue_summary: original.attachment_summary || original.user_message || '',\n    user_query: original.user_message || '',\n    attachment_summary: original.attachment_summary || '',\n    ticket_id: null,\n    messageId: original.messageId || '',\n    final_response_text: parsed.response || 'I could not clearly find that information in the attachment.',\n    extracted_value: parsed.extracted_value || null,\n    field_name: parsed.field_name || null\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -512,
+                1232
+            ],
+            "id": "e4a6ae6e-c89c-476b-9c96-fed806a75415",
+            "name": "Parse attachment info response1"
+        },
+        {
+            "parameters": {
+                "jsCode": "const message = ($json.message || '').toLowerCase().trim();\nconst history = Array.isArray($json.history) ? $json.history : [];\n\nfunction detectRequestedField(text) {\n  if (/app(lication)? id|application number|app number/i.test(text)) return 'application id';\n  if (/loan number|loan id/i.test(text)) return 'loan number';\n  if (/status/i.test(text)) return 'status';\n  if (/ifsc/i.test(text)) return 'ifsc';\n  if (/bank name|bank/i.test(text)) return 'bank name';\n  return null;\n}\n\nconst requestedField = detectRequestedField(message);\n\nlet matchedMemory = null;\n\nfor (let i = history.length - 1; i >= 0; i--) {\n  const h = history[i];\n  const issueSummary = (h.issue_summary || '').toLowerCase();\n  const attachmentSummary = (h.attachment_summary || '').toLowerCase();\n  const assistantMessage = (h.assistant_message || '').toLowerCase();\n  const userQuery = (h.user_query || '').toLowerCase();\n  const userMessage = (h.user_message || '').toLowerCase();\n  const matchedIssue = (h.matched_issue || '').toLowerCase();\n\n  if (matchedIssue !== 'attachment_info_request') continue;\n\n  if (requestedField) {\n    if (\n      issueSummary.includes(requestedField) ||\n      attachmentSummary.includes(requestedField) ||\n      assistantMessage.includes(requestedField) ||\n      userQuery.includes(requestedField) ||\n      userMessage.includes(requestedField)\n    ) {\n      matchedMemory = h;\n      break;\n    }\n  } else {\n    matchedMemory = h;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    requested_field: requestedField,\n    has_attachment_answer_in_memory: !!matchedMemory,\n    attachment_answer_from_memory: matchedMemory\n      ? (matchedMemory.assistant_message || matchedMemory.attachment_summary || matchedMemory.issue_summary || null)\n      : null\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1536,
+                1232
+            ],
+            "id": "f6e47202-404b-4b18-ae49-7ca62c954b80",
+            "name": "Check answer in memory1"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "5c2efca9-7672-47a3-b2ec-b3b2112d234e",
+                            "leftValue": "={{ $json.has_attachment_answer_in_memory }}",
+                            "rightValue": "true",
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "true",
+                                "singleValue": true
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -1312,
+                1232
+            ],
+            "id": "564d3ef8-6a99-40e2-990b-699945e76fb8",
+            "name": "Has attachment in memory1"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{\n  {\n    \"response\": $json.attachment_answer_from_memory || \"I found the earlier extracted information.\",\n    \"sender\": \"AI Assistant\",\n    \"category\": \"attachment_info_request\",\n    \"originalMessageId\": $json.messageId || \"\",\n    \"conversationId\": $json.conversationId || \"\"\n  }\n}}",
+                "options": {}
+            },
+            "id": "f535ccc9-3ccb-490a-b487-9c0a44da01a2",
+            "name": "Send asked information5",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1088,
+                1040
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const item = $input.first().json;\n\nconst reply =\n  item.answer ||\n  item.final_response_text ||\n  item.data?.text ||\n  item.apiPayload?.response ||\n  '';\n\nreturn [{\n  json: {\n    conversationId: item.conversationId || item.data?.conversationId || '',\n    user_message: item.message || item.user_message || '',\n    assistant_message: reply,\n    user_query: item.message || item.user_message || '',\n    intent: 'attachment_info_request',\n    matched_issue: 'attachment_info_request',\n    issue_summary: reply || item.attachment_summary || item.message || '',\n    attachment_summary: item.attachment_summary || '',\n    ticket_id: item.ticket_id || null,\n    messageId: item.messageId || item.data?.messageId || '',\n    file_url: item.file_url || null,\n    file_type: item.file_type || null,\n    file_name: item.file_name || null\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1088,
+                848
+            ],
+            "id": "c323833c-d8b4-49db-a54b-4b0f04d464ac",
+            "name": "Code in JavaScript1"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "559dd1d9-e510-400c-9b52-db1928afd6cb",
+            "name": "share requested info5",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -800,
+                848
+            ]
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "models/gemini-3-flash-preview",
+                    "mode": "list",
+                    "cachedResultName": "models/gemini-3-flash-preview"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "=You are an intent classifier for a customer support chatbot.\n\nClassify the user's latest message into exactly one of these intents:\n- greeting_or_ack\n- error_code_issue\n- general_issue\n- follow_up\n- followup_support\n- issue_recall\n- attachment_info_request\n- gibberish\n- unclear\n\nRules:\n\ngreeting_or_ack:\nmessages that are greetings or acknowledgements or basic personal introduction information such as:\n\"hi\", \"hello\", \"hey\", \"hii\", \"heyy\", \"gm\", \"good morning\", \"good evening\", \"yo\", \"sup\",\n\"my name is raj\", \"im from brooklyn\",\n\"thanks\", \"thank you\", \"thx\", \"ok\", \"okay\", \"cool\", \"got it\", \"alright\", \"sure\", \"noted\".\n\nerror_code_issue:\nmessage contains a specific error/status code like:\n404, 401, 403, 500, 503\nor clearly refers to such an error.\n\ngeneral_issue:\na support issue/query that is not just a greeting, is not clearly a follow-up-only message, and is not mainly answerable by reading the current attachment.\n\nUse general_issue for broader product/support problems such as:\n\"my repayment is not updated\"\n\"i cannot login\"\n\"payment failed\"\n\"loan disbursement is delayed\"\n\"my coapplicant status is still pending even after completion\"\n\"my status is wrong even though i already completed the step\"\n\nfollow_up:\nuser continues an earlier issue such as:\n\"still not working\"\n\"same issue\"\n\"what now\"\n\"not resolved yet\"\n\"did you fix it\"\n\"any update\"\n\nfollowup_support:\nuser is explicitly insisting on a follow-up to an already raised ticket, wants the support team to be contacted again, wants the earlier ticket response to be followed up on, or is asking for escalation/support reconnection because no definitive response can be given directly in chat.\n\nUse followup_support when the latest message is not just a normal progress check, but clearly asks to:\n- follow up with the support team again\n- reconnect or connect them to support\n- raise the same ticket/issue again\n- push the previous ticket response further\n- act on a prior raised ticket because the issue is still unresolved and the user wants support involvement again\n\nExamples:\n\"please follow up on my ticket\"\n\"connect me to support\"\n\"can you ask the support team again\"\n\"please raise this again\"\n\"i already have a ticket, follow up on it\"\n\"there was a previous ticket response, can you follow up on that\"\n\"i am still facing the same issue, please connect me with support\"\n\"can you escalate this again\"\n\"please check with the support team again\"\n\nImportant distinction:\n- Use follow_up for general continuation/progress-check style messages like \"any update\", \"still not working\", \"same issue\", where the user is continuing the conversation.\n- Use followup_support when the user is specifically insisting that support should be contacted again, the ticket should be followed up again, or the issue should be escalated/reposted to support because chat cannot give a definitive resolution.\n\nissue_recall:\nuser is asking about any issue, question, answer, or problem they mentioned earlier such as:\n\"what did i ask about earlier\"\n\"what issue did I report\"\n\"what problem did I mention earlier\"\n\"what error did I say before\"\n\"remind me the issue\"\n\"what was my issue\"\n\"what was its solution\"\n\"what did you say earlier\"\n\nattachment_info_request:\nthe user is asking to read, extract, summarize, identify, interpret, inspect, or answer something directly from the uploaded screenshot, image, or pdf itself.\n\nThis includes direct extraction requests such as:\n\"what is written here\"\n\"read this image\"\n\"what does this screenshot say\"\n\"summarize this pdf\"\n\"extract text from this\"\n\"what is in the attachment\"\n\"tell me the content of this file\"\n\nThis also includes questions where the answer is visible, readable, or inferable from the current attachment itself, such as:\n\"what fields are pending\"\n\"what is missing here\"\n\"what is the status shown here\"\n\"what issue is shown here\"\n\"which steps are incomplete\"\n\"what details are pending\"\n\"why is this pending\"\n\"why is my coapplicant loan status showing pending when its already completed\"\n\"why is this step still pending\"\n\"what does this screen say about the coapplicant\"\n\"what is wrong in this screenshot\"\n\nIf there is a current attachment and the user's question depends mainly on what is shown in that attachment, classify it as attachment_info_request even if the wording sounds like a support issue.\n\nVery important priority rule:\nWhen both of these seem possible:\n- attachment_info_request\n- general_issue\n\nchoose attachment_info_request if the answer can be obtained mainly by looking at or interpreting the current attachment.\n\nChoose general_issue only when the user is reporting or discussing a broader problem that cannot be answered mainly from the current attachment.\n\nExamples:\n- \"what fields are pending\" + screenshot attached -> attachment_info_request\n- \"why is my coapplicant loan status showing pending when its already completed\" + screenshot attached and the status is being asked about from the screenshot -> attachment_info_request\n- \"payment failed\" with no useful attachment-based answer -> general_issue\n- \"i still cannot login\" -> general_issue\n\ngibberish:\nQueries not related to banking, accounts, or financial services, message is meaningless, random characters, keyboard mash, broken words, or does not form a request, is a name or is just a normal statement.\nexamples:\n\"naman\"\n\"gloria\"\n\"earth is green\"\n\"i have a monitor\"\n\"asdjkh123\"\n\"xxxyyyzzz\"\n\"qwertyuiop\"\n\".....\"\n\"efhosefho\"\n\nunclear:\nmessage is extremely vague but still may be a human request or just a general statement such as:\n\"help\"\n\"issue\"\n\"problem\"\n\"check this\"\n\nImportant:\nIf the attachment_summary contains the main content and the user is asking to read, summarize, extract, explain, inspect, or answer something from the attachment, classify as attachment_info_request.\nIf the user has attached an image, screenshot, or pdf, and their question is about something visible in that attachment, prefer attachment_info_request.\nIf the answer can be obtained mainly by reading or interpreting the attachment content, treat it as attachment_info_request even if the user phrases it like a problem or asks in question form.\nOnly classify as general_issue when the user is reporting a support problem that is not mainly answerable by reading the attachment.\nUse conversation history only when the latest message clearly refers to something earlier.\nIf there is already context of an existing ticket/support interaction and the user is asking to contact support again, follow up on the previous ticket response, or escalate the same issue again, prefer followup_support over follow_up.\n\nReturn ONLY valid JSON in this format:\n{\n  \"intent\": \"greeting_or_ack | error_code_issue | general_issue | follow_up | followup_support | issue_recall | attachment_info_request | gibberish | unclear\",\n  \"confidence\": 0.0,\n  \"error_code\": \"string or null\",\n  \"needs_ocr\": true,\n  \"direct_reply\": \"string or null\",\n  \"normalized_user_need\": \"string\",\n  \"needs_ticket\": false\n}\n\nAdditional rules:\n- If the message is greeting_or_ack, set direct_reply to a friendly short response.\n- If the intent is not greeting_or_ack, set direct_reply to null.\n- If there is a clear error code, extract it into error_code.\n- If there is an attachment and the request depends on reading, understanding, or interpreting it, set needs_ocr to true.\n- If the message is gibberish, set normalized_user_need to \"Unintelligible or meaningless input\".\n- If the main issue or answer is visible in the attachment_summary, use that in normalized_user_need.\n- For attachment_info_request, normalize the user's need in a simple way based on what they are asking from the attachment.\n- For followup_support, normalize the user's need as a follow-up/escalation request on an existing ticket or prior support response.\n- If intent is followup_support, set needs_ticket to false.\n- Do not answer the user's problem here except for greeting_or_ack messages.\n- Output JSON only, no markdown.\n\nInput:\n{{ JSON.stringify({\n  message: $json.message,\n  normalizedText: $json.normalizedText,\n  possibleErrorCode: $json.possibleErrorCode,\n  hasAttachment: $json.hasAttachment,\n  attachmentHint: $json.attachmentHint,\n  attachment_text: $json.attachment_text,\n  attachment_summary: $json.attachment_summary,\n  history: ($json.history || []).slice(-6)\n}) }}"
+                        }
+                    ]
+                },
+                "builtInTools": {},
+                "options": {}
+            },
+            "id": "bbec32c8-8340-43e1-bb84-60015746ca5b",
+            "name": "Intent Classifier1",
+            "type": "@n8n/n8n-nodes-langchain.googleGemini",
+            "typeVersion": 1.1,
+            "position": [
+                -2560,
+                560
+            ],
+            "credentials": {
+                "googlePalmApi": {
+                    "id": "VU4lYlt9NwCfUiPY",
+                    "name": "Google Gemini(PaLM) Api account 7"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Merge Attachment Context').first().json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
+            },
+            "id": "0579d52b-67e2-4a73-be17-e6f567482f1c",
+            "name": "Parse Intent1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -2208,
+                560
             ]
         },
         {
@@ -318,26 +682,26 @@
                 },
                 "options": {}
             },
-            "id": "d4ebb8d3-1a25-4e3c-b605-3242303a690d",
-            "name": "Is Greeting?",
+            "id": "f12ea7d7-a3ce-4fe4-b9c2-b0373851853a",
+            "name": "Is Greeting?1",
             "type": "n8n-nodes-base.if",
             "typeVersion": 2,
             "position": [
-                1984,
-                12144
+                -1984,
+                560
             ]
         },
         {
             "parameters": {
                 "jsCode": "const reply = $json.parsed_intent?.direct_reply || 'Hello! How can I help you today?';\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: reply,\n    final_category: 'greeting_or_ack',\n    apiPayload: {\n      response: reply,\n      sender: 'AI Assistant',\n      category: 'greeting_or_ack',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
             },
-            "id": "1843ac4b-4f1c-4f62-84cf-d6476373f1f1",
-            "name": "Prepare Greeting Response",
+            "id": "932e23e2-8605-490b-a433-fd76b2c46347",
+            "name": "Prepare Greeting Response1",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                2208,
-                11952
+                -1760,
+                80
             ]
         },
         {
@@ -349,26 +713,26 @@
                 "jsonBody": "={{ $json.apiPayload }}",
                 "options": {}
             },
-            "id": "2fec0d94-a269-43a5-bd82-ae085c0f03f5",
-            "name": "Send Greeting Response",
+            "id": "bcb3f32b-3a8d-438c-95e4-cf4e954c5fcf",
+            "name": "Send Greeting Response1",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2432,
-                11856
+                -1536,
+                -16
             ]
         },
         {
             "parameters": {
-                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'greeting_or_ack',\n    matched_issue: 'greeting_or_ack',\n    issue_summary: null,\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    user_query: $json.message || '',\n    intent: $json.parsed_intent?.intent || 'greeting_or_ack',\n    matched_issue: 'greeting_or_ack',\n    issue_summary: null,\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || '',\n    file_url: $json.file_url || null,\n    file_type: $json.file_type || null,\n    file_name: $json.file_name || null\n  }\n}];"
             },
-            "id": "47635d00-efa1-4d7c-a962-af6daa0928e6",
-            "name": "Prepare Greeting Memory",
+            "id": "2f2ee85d-0450-4d3d-a71d-32a6ef3753e3",
+            "name": "Prepare Greeting Memory1",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                2432,
-                12048
+                -1536,
+                176
             ]
         },
         {
@@ -380,13 +744,419 @@
                 "jsonBody": "={{ $json }}",
                 "options": {}
             },
-            "id": "45f16f71-0aa4-408d-a4ae-4ca174d2dfcd",
-            "name": "Save Greeting Memory",
+            "id": "23f9daa9-fdbd-47e0-9c0a-5b0588ba93bc",
+            "name": "Save Greeting Memory1",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                2720,
-                12048
+                -1312,
+                176
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    ...$json,\n    apiPayload: {\n      response: \"Couldn't understand the problem kindly describe your issue again\",\n      sender: 'AI Assistant',\n      category: 'gibberish',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
+            },
+            "id": "1ca3dec5-e0ce-4cff-8e49-3a38578ce672",
+            "name": "Send Empty Response7",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1088,
+                464
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const item = $input.first().json;\n\nconst kb = [\n  {\n    short_issue: '404 Not Found',\n    short_resolution_or_hint: 'The requested resource or endpoint does not exist. Verify the URL or webhook path.',\n    example_subjects: ['Webhook not registered', 'API endpoint not found']\n  },\n  {\n    short_issue: '401 Unauthorized',\n    short_resolution_or_hint: 'Authentication failed. Check API keys, tokens, or login credentials.',\n    example_subjects: ['Invalid API token']\n  },\n  {\n    short_issue: '403 Forbidden',\n    short_resolution_or_hint: 'Access to the resource is denied. Ensure proper permissions are granted.',\n    example_subjects: ['Permission denied']\n  },\n  {\n    short_issue: '500 Internal Server Error',\n    short_resolution_or_hint: 'The server encountered an unexpected condition. Check backend logs for details.',\n    example_subjects: ['Server crashed while processing request']\n  },\n  {\n    short_issue: '503 Service Unavailable',\n    short_resolution_or_hint: 'The service is temporarily unavailable due to overload or maintenance. Retry later.',\n    example_subjects: ['Service temporarily unavailable']\n  },\n  {\n    short_issue: 'Payment or invoice issue',\n    short_resolution_or_hint: 'Check invoice upload, payment status, approval stage, or missing UTR.',\n    example_subjects: ['Payment pending', 'Invoice issue']\n  },\n  {\n    short_issue: 'System access not working',\n    short_resolution_or_hint: 'Verify login rights, reset password, or enable the account.',\n    example_subjects: ['Unable to login']\n  },\n  {\n    short_issue: 'Bank account or IFSC update',\n    short_resolution_or_hint: 'Verify bank details and update the account number or IFSC correctly.',\n    example_subjects: ['Bank details update']\n  },\n  {\n    short_issue: 'Loan disbursement pending',\n    short_resolution_or_hint: 'Check the disbursement stage, bank validation, or pending borrower action.',\n    example_subjects: ['Disbursement pending']\n  },\n  {\n    short_issue: 'Ticket follow-up or no response',\n    short_resolution_or_hint: 'Check ticket age and escalate if it has been pending too long.',\n    example_subjects: ['No response on ticket']\n  },\n  {\n    short_issue: 'Password reset request',\n    short_resolution_or_hint: 'Reset the password or follow the account recovery flow.',\n    example_subjects: ['Password reset']\n  },\n  {\n    short_issue: 'App or portal bug',\n    short_resolution_or_hint: 'Check the affected page, error pattern, browser, and recent changes.',\n    example_subjects: ['Portal issue']\n  },\n  {\n    short_issue: 'Unable to submit form',\n    short_resolution_or_hint: 'Check mandatory fields, validation errors, session expiry, or access rights.',\n    example_subjects: ['Form submission failed']\n  },\n  {\n    short_issue: 'Document not opening or corrupted',\n    short_resolution_or_hint: 'Check the file format/version or ask for the document to be resent.',\n    example_subjects: ['File not opening']\n  },\n  {\n    short_issue: 'Meeting link not working',\n    short_resolution_or_hint: 'Verify the meeting link, invite permissions, and the correct signed-in account.',\n    example_subjects: ['Meeting link issue']\n  },\n  {\n  short_issue: 'Repayment details not available for batches',\n  short_resolution_or_hint: 'Verify the batch ID and check repayment records in the system before sharing details.',\n  example_subjects: ['Repayment details for few batches']\n  },\n  {\n  short_issue: 'Loan repayment not reflecting in system',\n  short_resolution_or_hint: 'Check payment gateway logs and reconcile the transaction in the repayment dashboard.',\n  example_subjects: ['Payment made but not updated']\n  },\n  {\n  short_issue: 'Duplicate repayment recorded',\n  short_resolution_or_hint: 'Verify transaction IDs and initiate refund or reconciliation for duplicate entries.',\n  example_subjects: ['Duplicate payment']\n  },\n  {\n  short_issue: 'Loan disbursement delay',\n  short_resolution_or_hint: 'Check disbursement processing logs and confirm approval status before escalating.',\n  example_subjects: ['Loan disbursement pending']\n  },\n  {\n  short_issue: 'Outstanding loan balance requested',\n  short_resolution_or_hint: 'Retrieve the borrower loan account and share the updated outstanding balance.',\n  example_subjects: ['Outstanding balance required']\n  },\n  {\n  short_issue: 'Loan statement requested',\n  short_resolution_or_hint: 'Generate the loan statement from the dashboard and send it to the requester.',\n  example_subjects: ['Loan statement required']\n  },\n  {\n  short_issue: 'Batch closure request',\n  short_resolution_or_hint: 'Ensure all repayments are reconciled before marking the batch as closed.',\n  example_subjects: ['Please close the batch']\n  },\n  {\n  short_issue: 'Incorrect repayment amount recorded',\n  short_resolution_or_hint: 'Cross-check the repayment entry with bank records and update if incorrect.',\n  example_subjects: ['Repayment mismatch']\n  },\n  {\n  short_issue: 'Repayment schedule requested',\n  short_resolution_or_hint: 'Retrieve the repayment schedule from the loan management system.',\n  example_subjects: ['Repayment schedule']\n  },\n  {\n  short_issue: 'Loan application status inquiry',\n  short_resolution_or_hint: 'Check the application workflow status and inform the requester.',\n  example_subjects: ['Application status']\n  },\n  {\n  short_issue: 'Bank IFSC update required',\n  short_resolution_or_hint: 'Validate the new IFSC code and update borrower banking details.',\n  example_subjects: ['Update IFSC']\n  },\n  {\n  short_issue: 'Bank account verification failed',\n  short_resolution_or_hint: 'Ask the user to re-submit correct bank details or documents.',\n  example_subjects: ['Bank verification failed']\n  },\n  {\n  short_issue: 'Borrower information incorrect',\n  short_resolution_or_hint: 'Verify borrower profile and update incorrect fields.',\n  example_subjects: ['Incorrect borrower details']\n  },\n  {\n  short_issue: 'Loan account not visible in dashboard',\n  short_resolution_or_hint: 'Check user permissions and account mapping.',\n  example_subjects: ['Loan not showing']\n  },\n  {\n  short_issue: 'EMI breakup requested',\n  short_resolution_or_hint: 'Provide EMI details including principal and interest components.',\n  example_subjects: ['EMI breakup']\n  },\n  {\n  short_issue: 'Repayment overdue notification',\n  short_resolution_or_hint: 'Confirm overdue status and inform about pending dues.',\n  example_subjects: ['Overdue payment']\n  },\n  {\n  short_issue: 'Repayment transaction stuck',\n  short_resolution_or_hint: 'Verify gateway processing status and reconcile manually if needed.',\n  example_subjects: ['Payment stuck']\n  },\n  {\n  short_issue: 'Batch repayment reconciliation required',\n  short_resolution_or_hint: 'Compare repayment records with bank settlement files.',\n  example_subjects: ['Batch reconciliation']\n  },\n  {\n  short_issue: 'Repayment confirmation requested',\n  short_resolution_or_hint: 'Verify repayment entry and confirm transaction status.',\n  example_subjects: ['Payment confirmation']\n  },\n  {\n  short_issue: 'Batch repayment summary requested',\n  short_resolution_or_hint: 'Generate repayment summary report from the system.',\n  example_subjects: ['Batch summary']\n  },\n  \n  {\n  short_issue: 'Loan foreclosure request',\n  short_resolution_or_hint: 'Calculate foreclosure amount and guide user through closure process.',\n  example_subjects: ['Loan foreclosure']\n  },\n  {\n  short_issue: 'Loan payoff amount requested',\n  short_resolution_or_hint: 'Compute outstanding principal plus interest and share payoff value.',\n  example_subjects: ['Payoff amount']\n  },\n  {\n  short_issue: 'Repayment mandate failed',\n  short_resolution_or_hint: 'Check bank mandate status and request reauthorization if needed.',\n  example_subjects: ['Mandate failure']\n  },\n  {\n  short_issue: 'Auto debit failed',\n  short_resolution_or_hint: 'Verify auto debit setup and bank mandate validity.',\n  example_subjects: ['Auto debit failed']\n  },\n  {\n  short_issue: 'Repayment credited to wrong account',\n  short_resolution_or_hint: 'Validate payment routing and initiate correction process.',\n  example_subjects: ['Wrong account credit']\n  },\n  {\n  short_issue: 'Missing repayment record',\n  short_resolution_or_hint: 'Search logs using payment reference and update the record.',\n  example_subjects: ['Payment missing']\n  },\n  {\n  short_issue: 'Loan account closed incorrectly',\n  short_resolution_or_hint: 'Review account closure logs and restore account if required.',\n  example_subjects: ['Account closed wrongly']\n  },\n  {\n  short_issue: 'Repayment due date clarification',\n  short_resolution_or_hint: 'Check repayment schedule and communicate the correct due date.',\n  example_subjects: ['Due date query']\n  },\n  {\n  short_issue: 'Repayment adjustment required',\n  short_resolution_or_hint: 'Apply correction entries after verifying repayment details.',\n  example_subjects: ['Adjustment needed']\n  },\n  {\n  short_issue: 'Repayment report requested',\n  short_resolution_or_hint: 'Generate repayment report from internal dashboard.',\n  example_subjects: ['Repayment report']\n  },\n  \n  {\n  short_issue: 'Dashboard not loading',\n  short_resolution_or_hint: 'Ask user to refresh session or check server availability.',\n  example_subjects: ['Dashboard not opening']\n  },\n  {\n  short_issue: 'User login failure',\n  short_resolution_or_hint: 'Verify credentials and reset password if required.',\n  example_subjects: ['Unable to login']\n  },\n  {\n  short_issue: 'Account locked due to failed attempts',\n  short_resolution_or_hint: 'Unlock account from admin panel after verification.',\n  example_subjects: ['Account locked']\n  },\n  {\n  short_issue: 'OTP not received',\n  short_resolution_or_hint: 'Ask user to retry OTP request and verify registered mobile.',\n  example_subjects: ['OTP not received']\n  },\n  {\n  short_issue: 'Password reset not working',\n  short_resolution_or_hint: 'Send a fresh password reset link.',\n  example_subjects: ['Password reset issue']\n  },\n  {\n  short_issue: 'Session expired frequently',\n  short_resolution_or_hint: 'Check session timeout configuration.',\n  example_subjects: ['Session expired']\n  },\n  {\n  short_issue: 'User role permissions missing',\n  short_resolution_or_hint: 'Verify assigned roles and update permissions.',\n  example_subjects: ['Permission issue']\n  },\n  {\n  short_issue: 'Document upload failure',\n  short_resolution_or_hint: 'Verify file format and size before retrying upload.',\n  example_subjects: ['Upload failed']\n  },\n  {\n  short_issue: 'Document not opening or corrupted',\n  short_resolution_or_hint: 'Check file format/version or request a fresh copy.',\n  example_subjects: ['File not opening']\n  },\n  {\n  short_issue: 'Incorrect document attached to loan',\n  short_resolution_or_hint: 'Replace with correct document and update loan record.',\n  example_subjects: ['Wrong document']\n  },\n  \n  {\n  short_issue: 'API request returning error',\n  short_resolution_or_hint: 'Check API logs and validate request parameters.',\n  example_subjects: ['API error']\n  },\n  {\n  short_issue: 'API authentication failure',\n  short_resolution_or_hint: 'Verify API key or authentication token.',\n  example_subjects: ['401 unauthorized']\n  },\n  {\n  short_issue: 'Service temporarily unavailable',\n  short_resolution_or_hint: 'Retry request after server recovery.',\n  example_subjects: ['503 error']\n  },\n  {\n  short_issue: 'Invalid request parameters',\n  short_resolution_or_hint: 'Ensure required parameters are included.',\n  example_subjects: ['Bad request']\n  },\n  {\n  short_issue: 'Internal server error encountered',\n  short_resolution_or_hint: 'Check backend logs for the root cause.',\n  example_subjects: ['500 error']\n  },\n  \n  {\n  short_issue: 'Ticket creation confirmation',\n  short_resolution_or_hint: 'Confirm ticket ID and assign it to the support team.',\n  example_subjects: ['Ticket created']\n  },\n  {\n  short_issue: 'Ticket status follow-up',\n  short_resolution_or_hint: 'Check ticket progress and update requester.',\n  example_subjects: ['Ticket status']\n  },\n  {\n  short_issue: 'Ticket reassignment needed',\n  short_resolution_or_hint: 'Transfer ticket to the appropriate team.',\n  example_subjects: ['Reassign ticket']\n  },\n  {\n  short_issue: 'Duplicate support ticket created',\n  short_resolution_or_hint: 'Merge duplicate tickets and continue processing.',\n  example_subjects: ['Duplicate ticket']\n  },\n  {\n  short_issue: 'Ticket closed without resolution',\n  short_resolution_or_hint: 'Reopen the ticket and continue investigation.',\n  example_subjects: ['Ticket closed wrongly']\n  },\n  {\n  short_issue: 'Loan disbursement amount mismatch',\n  short_resolution_or_hint: 'Verify approved loan amount and compare it with disbursement records.',\n  example_subjects: ['Disbursement amount mismatch']\n  },\n  {\n  short_issue: 'Repayment received but batch not updated',\n  short_resolution_or_hint: 'Check repayment logs and update the batch reconciliation entry.',\n  example_subjects: ['Batch not updated after payment']\n  },\n  {\n  short_issue: 'Loan approval pending for long duration',\n  short_resolution_or_hint: 'Review approval workflow and escalate if approval is delayed.',\n  example_subjects: ['Approval pending']\n  },\n  {\n  short_issue: 'Loan rejected without clear reason',\n  short_resolution_or_hint: 'Check rejection notes in the system and provide explanation to the user.',\n  example_subjects: ['Loan rejected']\n  },\n  {\n  short_issue: 'Borrower KYC verification failed',\n  short_resolution_or_hint: 'Request borrower to resubmit valid identity documents.',\n  example_subjects: ['KYC failed']\n  },\n  {\n  short_issue: 'Borrower KYC documents missing',\n  short_resolution_or_hint: 'Ask the user to upload missing KYC documents before processing.',\n  example_subjects: ['KYC documents missing']\n  },\n  {\n  short_issue: 'Incorrect interest calculation',\n  short_resolution_or_hint: 'Recalculate interest using loan terms and update repayment schedule.',\n  example_subjects: ['Interest calculation wrong']\n  },\n  {\n  short_issue: 'Repayment credited but interest not updated',\n  short_resolution_or_hint: 'Refresh loan calculation engine and update outstanding interest.',\n  example_subjects: ['Interest not updated']\n  },\n  {\n  short_issue: 'Loan account mapping issue',\n  short_resolution_or_hint: 'Verify loan account mapping in backend configuration.',\n  example_subjects: ['Loan mapping issue']\n  },\n  {\n  short_issue: 'Loan disbursement failed due to bank error',\n  short_resolution_or_hint: 'Verify bank response logs and retry disbursement.',\n  example_subjects: ['Bank disbursement failure']\n  },\n  {\n  short_issue: 'Repayment gateway timeout',\n  short_resolution_or_hint: 'Retry the transaction and verify gateway availability.',\n  example_subjects: ['Payment gateway timeout']\n  },\n  {\n  short_issue: 'User unable to upload repayment proof',\n  short_resolution_or_hint: 'Verify file format and allow supported document types.',\n  example_subjects: ['Proof upload issue']\n  },\n  {\n  short_issue: 'Repayment proof uploaded but not verified',\n  short_resolution_or_hint: 'Review the uploaded document and update verification status.',\n  example_subjects: ['Proof pending verification']\n  },\n  {\n  short_issue: 'Loan status showing incorrect stage',\n  short_resolution_or_hint: 'Refresh loan workflow status in the system.',\n  example_subjects: ['Wrong loan status']\n  },\n  {\n  short_issue: 'Loan repayment reminder not received',\n  short_resolution_or_hint: 'Verify notification settings and resend reminder.',\n  example_subjects: ['Reminder not received']\n  },\n  {\n  short_issue: 'Email notification not sent',\n  short_resolution_or_hint: 'Check email service logs and resend notification.',\n  example_subjects: ['Email not received']\n  },\n  {\n  short_issue: 'SMS notification not delivered',\n  short_resolution_or_hint: 'Verify SMS gateway status and retry sending.',\n  example_subjects: ['SMS not received']\n  },\n  {\n  short_issue: 'Loan repayment history missing',\n  short_resolution_or_hint: 'Retrieve repayment history from backup records.',\n  example_subjects: ['Repayment history missing']\n  },\n  {\n  short_issue: 'Loan repayment partially updated',\n  short_resolution_or_hint: 'Check partial transaction logs and complete reconciliation.',\n  example_subjects: ['Partial repayment issue']\n  },\n  {\n  short_issue: 'Loan installment skipped incorrectly',\n  short_resolution_or_hint: 'Verify installment schedule and correct skipped entries.',\n  example_subjects: ['Installment skipped']\n  },\n  {\n  short_issue: 'Loan repayment credited late',\n  short_resolution_or_hint: 'Verify payment timestamp and adjust repayment entry if needed.',\n  example_subjects: ['Late repayment credit']\n  },\n  {\n  short_issue: 'User requesting repayment receipt',\n  short_resolution_or_hint: 'Generate repayment receipt from the system.',\n  example_subjects: ['Repayment receipt']\n  },\n  {\n  short_issue: 'Loan repayment deducted twice',\n  short_resolution_or_hint: 'Confirm duplicate debit and initiate refund.',\n  example_subjects: ['Double debit']\n  },\n  {\n  short_issue: 'Loan processing fee mismatch',\n  short_resolution_or_hint: 'Verify fee calculation rules and update loan summary.',\n  example_subjects: ['Processing fee issue']\n  },\n  {\n  short_issue: 'Loan tenure showing incorrect value',\n  short_resolution_or_hint: 'Check loan configuration and update tenure field.',\n  example_subjects: ['Tenure incorrect']\n  },\n  {\n  short_issue: 'Loan EMI amount incorrect',\n  short_resolution_or_hint: 'Recalculate EMI based on updated loan parameters.',\n  example_subjects: ['EMI wrong']\n  },\n  {\n  short_issue: 'Loan repayment schedule missing',\n  short_resolution_or_hint: 'Regenerate repayment schedule for the account.',\n  example_subjects: ['Schedule missing']\n  },\n  {\n  short_issue: 'Loan repayment due date changed unexpectedly',\n  short_resolution_or_hint: 'Verify if schedule modification was applied.',\n  example_subjects: ['Due date changed']\n  },\n  {\n  short_issue: 'Loan repayment marked failed',\n  short_resolution_or_hint: 'Check bank response code and retry transaction.',\n  example_subjects: ['Payment failed']\n  },\n  {\n  short_issue: 'Loan repayment credited but outstanding unchanged',\n  short_resolution_or_hint: 'Refresh loan account balance calculation.',\n  example_subjects: ['Balance not updated']\n  },\n  {\n  short_issue: 'Loan repayment settlement pending',\n  short_resolution_or_hint: 'Verify settlement batch processing.',\n  example_subjects: ['Settlement pending']\n  },\n  {\n  short_issue: 'Loan repayment not mapped to correct borrower',\n  short_resolution_or_hint: 'Check borrower ID mapping for the repayment entry.',\n  example_subjects: ['Repayment mapping issue']\n  },\n  {\n  short_issue: 'Loan disbursement initiated but funds not received',\n  short_resolution_or_hint: 'Check bank transaction reference and settlement logs.',\n  example_subjects: ['Funds not received']\n  },\n  {\n  short_issue: 'User requesting disbursement proof',\n  short_resolution_or_hint: 'Provide disbursement transaction reference.',\n  example_subjects: ['Disbursement proof']\n  },\n  {\n  short_issue: 'Loan batch repayment mismatch',\n  short_resolution_or_hint: 'Compare batch total with repayment records.',\n  example_subjects: ['Batch mismatch']\n  },\n  {\n  short_issue: 'Loan repayment not appearing in borrower portal',\n  short_resolution_or_hint: 'Sync repayment data with borrower dashboard.',\n  example_subjects: ['Repayment not visible']\n  },\n  {\n  short_issue: 'Loan repayment entry duplicated in report',\n  short_resolution_or_hint: 'Remove duplicate entry and update report.',\n  example_subjects: ['Duplicate repayment entry']\n  },\n  {\n  short_issue: 'Loan account status not updating',\n  short_resolution_or_hint: 'Trigger account status refresh in backend.',\n  example_subjects: ['Status not updated']\n  },\n  {\n  short_issue: 'Loan repayment reconciliation failed',\n  short_resolution_or_hint: 'Run reconciliation process again with updated logs.',\n  example_subjects: ['Reconciliation failed']\n  },\n  {\n  short_issue: 'Loan account flagged incorrectly',\n  short_resolution_or_hint: 'Review account flags and remove incorrect tag.',\n  example_subjects: ['Account flagged']\n  },\n  {\n  short_issue: 'User unable to download loan statement',\n  short_resolution_or_hint: 'Check file generation service and regenerate statement.',\n  example_subjects: ['Download issue']\n  },\n  {\n  short_issue: 'Loan report export failed',\n  short_resolution_or_hint: 'Retry export after verifying system availability.',\n  example_subjects: ['Export failed']\n  },\n  {\n  short_issue: 'Loan dashboard data not refreshing',\n  short_resolution_or_hint: 'Clear cache and refresh dashboard data.',\n  example_subjects: ['Dashboard not updating']\n  },\n  {\n  short_issue: 'Loan repayment summary incorrect',\n  short_resolution_or_hint: 'Recalculate summary totals from repayment records.',\n  example_subjects: ['Summary mismatch']\n  },\n  {\n  short_issue: 'Loan transaction history incomplete',\n  short_resolution_or_hint: 'Retrieve missing records from transaction logs.',\n  example_subjects: ['History incomplete']\n  },\n  {\n  short_issue: 'Loan batch upload failed',\n  short_resolution_or_hint: 'Check file format and retry batch upload.',\n  example_subjects: ['Batch upload error']\n  },\n  {\n  short_issue: 'Loan batch processing delayed',\n  short_resolution_or_hint: 'Verify processing queue and server load.',\n  example_subjects: ['Batch delay']\n  },\n  {\n  short_issue: 'Loan repayment reconciliation report missing',\n  short_resolution_or_hint: 'Generate reconciliation report manually.',\n  example_subjects: ['Report missing']\n  },\n  {\n  short_issue: 'Loan repayment status inconsistent',\n  short_resolution_or_hint: 'Refresh repayment status from payment gateway logs.',\n  example_subjects: ['Status inconsistent']\n  },\n  {\n  short_issue: 'Loan repayment ledger mismatch',\n  short_resolution_or_hint: 'Compare ledger entries with repayment transactions.',\n  example_subjects: ['Ledger mismatch']\n  }\n];\n\nreturn [{\n  json: {\n    ...item,\n    kb\n  }\n}];"
+            },
+            "id": "46a9c6a2-c840-4864-a947-fb5336ce9bbc",
+            "name": "KB Lookup1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1088,
+                272
+            ]
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "models/gemini-3-flash-preview",
+                    "mode": "list",
+                    "cachedResultName": "models/gemini-3-flash-preview"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "=You are a support issue matcher.\n\nUser issue:\n{{ $json.message }}\n\nNormalized user need:\n{{ $json.parsed_intent.normalized_user_need || '' }}\n\nAttachment summary:\n{{ $json.attachment_summary || '' }}\n\nDetected intent:\n{{ $json.parsed_intent.intent || '' }}\n\nPossible error code:\n{{ $json.parsed_intent.error_code || $json.possibleErrorCode || '' }}\n\nPrevious conversation:\n{{ JSON.stringify(($json.history || []).slice(-6)) }}\n\nKnowledge base:\n{{ JSON.stringify($json.kb) }}\n\nInstructions:\n- If the user asks what was my ticketid go and check if the ticket has been created if not reply with no ticket has been created as of yet.\n- If the user seems frustrated or says that they have tried \"multiple\", \"many\" times and the issue still hasn't been resolved then tell them to write \"contact support\" if they would like to get in touch with a personel\n- Match the user's issue to exactly one closest KB entry by meaning.\n- Prefer the user's latest message first.\n- Use normalized user need, attachment summary, and previous conversation only if the latest message is vague.\n- If an error code like 404, 401, 403, 500, or 503 is present, prefer the matching KB error entry.\n- If the user is asking to talk to a human, escalate, or contact support, return matched_issue as \"no_match\".\n- If the user asks for a ticket ID, do not invent one. Return matched_issue as \"no_match\".\n- If there is no clear KB match, return matched_issue as \"no_match\".\n- If a KB match is found, copy the KB issue title into matched_issue exactly.\n- If a KB match is found, rewrite the KB resolution into short_resolution_or_hint in a friendly, simple, user-facing way.\n- Keep the meaning the same as the KB resolution and make only small wording changes for clarity, tone, and grammar.\n- Do not add any new troubleshooting steps that are not already present in the matched KB entry.\n- Do not give broad multi-option replies.\n- Do not mention OCR, screenshots, PDFs, attachments, extraction, internal workflow, KB search, or confidence reasoning.\n- Keep the returned hint specific, short, and tied to the matched KB entry only.\n- Keep the hint concise, natural, and easy to understand.\n- Return JSON only.\n\nOutput format:\n{\n  \"matched_issue\": \"string\",\n  \"short_resolution_or_hint\": \"string\",\n  \"confidence\": 0.0,\n  \"needs_ticket\": false\n}"
+                        }
+                    ]
+                },
+                "builtInTools": {},
+                "options": {}
+            },
+            "id": "e3945879-3d9b-47c1-9e7c-dc4c3fec7509",
+            "name": "Issue Matcher1",
+            "type": "@n8n/n8n-nodes-langchain.googleGemini",
+            "typeVersion": 1.1,
+            "position": [
+                -864,
+                272
+            ],
+            "credentials": {
+                "googlePalmApi": {
+                    "id": "VU4lYlt9NwCfUiPY",
+                    "name": "Google Gemini(PaLM) Api account 7"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('KB Lookup1').item.json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    matched_issue: 'no_match',\n    short_resolution_or_hint: 'I could not confidently match this issue to the knowledge base.',\n    confidence: 0,\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_issue: parsed\n  }\n}];"
+            },
+            "id": "d46ee651-245c-4eb6-923f-e2838a1df3c0",
+            "name": "Parse Issue Match1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -512,
+                272
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{ $json.parsed_issue.matched_issue }}",
+                            "rightValue": "no_match",
+                            "operator": {
+                                "type": "string",
+                                "operation": "notEquals"
+                            },
+                            "id": "6a63cac0-bdf8-4532-822a-44f359d10183"
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "6957ea0f-bed4-41f4-bb71-651a9345cf6a",
+            "name": "Matched KB?1",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -288,
+                272
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\n\nconst hasKbMatch = issue.matched_issue && issue.matched_issue !== 'no_match';\n\nlet response = '';\n\nif (hasKbMatch) {\n  response = issue.short_resolution_or_hint || 'I found a likely match for your issue.';\n} else if (intent.needs_ocr) {\n  response = 'I could not match this issue clearly yet. Please share a clearer screenshot or document showing the main error.';\n} else {\n  response = 'I could not find a clear match for this issue. Please share a little more detail.';\n}\n\nif (intent.intent === 'follow_up' && hasKbMatch) {\n  response = `This looks like a follow-up to your earlier issue. ${response}`;\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: hasKbMatch\n      ? issue.matched_issue\n      : (intent.intent || 'general_issue'),\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: hasKbMatch\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
+            },
+            "id": "f2f3e912-98d2-4545-a573-55508ead5a0d",
+            "name": "Prepare KB Response1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -64,
+                -16
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "246e1eee-2ea4-472c-a905-862b91a2a0ef",
+            "name": "Send KB Response1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                160,
+                -112
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    user_query: $json.message || '',\n    intent: $json.parsed_intent?.intent || 'general_issue',\n    matched_issue: $json.final_category || $json.parsed_issue?.matched_issue || 'general_issue',\n    issue_summary:\n      $json.final_response_text ||\n      $json.parsed_intent?.normalized_user_need ||\n      $json.message ||\n      $json.attachment_summary ||\n      '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || '',\n    file_url: $json.file_url || null,\n    file_type: $json.file_type || null,\n    file_name: $json.file_name || null\n  }\n}];"
+            },
+            "id": "f5976ec5-597b-4480-b8c4-5483fd1175fc",
+            "name": "Prepare KB Memory1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                160,
+                80
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "11eac3ae-2945-4563-97eb-3a787cd46223",
+            "name": "Save KB Memory1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                384,
+                80
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\nconst message = ($json.message || '').trim();\nconst lowerMessage = message.toLowerCase();\nconst existingTicketId = $json.latest_ticket_id || null;\nconst history = Array.isArray($json.history) ? $json.history : [];\n\nconst wantsSupportPerson =\n  /contact support|support person|human support|talk to support|connect me to support|connect to support|agent|human agent|representative|real person|customer care|escalate/i.test(lowerMessage);\n\nconst asksForTicketId =\n  /ticket id|existing ticket|my ticket|previous ticket|show ticket|ticket number/i.test(lowerMessage);\n\nconst genericSupportOnly =\n  /^(i want to contact support|contact support|connect me to support|connect to support|i need support|support|human|agent|human agent|representative|real person|customer care|escalate)$/i.test(lowerMessage);\n\nconst awaitingTicketDetails = history.some(item =>\n  item.role === 'assistant' &&\n  /please briefly describe.*issue.*ticket|tell me your issue.*create.*ticket|describe the issue so i can create/i.test(\n    (item.assistant_message || item.message || item.text || '').toLowerCase()\n  )\n);\n\nconst hasIssueDetails =\n  message.length > 20 &&\n  !genericSupportOnly;\n\nconst hasManualTicketInThisChat = history.some(h =>\n  h.ticket_id &&\n  (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n);\n\nconst reuseExistingTicket =\n  !!existingTicketId &&\n  hasManualTicketInThisChat &&\n  (\n    wantsSupportPerson ||\n    asksForTicketId ||\n    issue.matched_issue === 'no_match'\n  );\n\nlet shouldAskForDetails = false;\nlet shouldCreateTicket = false;\nlet ticketReason = null;\n\nif (wantsSupportPerson && !hasIssueDetails) {\n  shouldAskForDetails = true;\n  ticketReason = 'support_requested_but_no_issue_details';\n}\n\nif (wantsSupportPerson && hasIssueDetails) {\n  shouldCreateTicket = true;\n  ticketReason = 'support_requested_with_issue_details';\n}\n\nif (!wantsSupportPerson && awaitingTicketDetails && hasIssueDetails) {\n  shouldCreateTicket = true;\n  shouldAskForDetails = false;\n  ticketReason = 'issue_details_provided_after_support_request';\n}\n\nif (!wantsSupportPerson && !asksForTicketId && !shouldCreateTicket && !reuseExistingTicket) {\n  shouldCreateTicket = true;\n  ticketReason = 'default_manual_ticket';\n}\n\nconst routeToExistingResponse = reuseExistingTicket || shouldAskForDetails || asksForTicketId;\n\n// hardcoded routing for now; replace with your real mapping later\nconst assignedTo = 'dev1';\nconst assignedToName = 'Developer 1';\nconst assignedTeamsWebhook = 'https://YOUR-ASSIGNEE-TEAMS-WEBHOOK';\nconst escalationTo = 'manager1';\nconst escalationToName = 'Engineering Manager';\nconst escalationTeamsWebhook = 'https://YOUR-MANAGER-TEAMS-WEBHOOK';\n\nreturn [{\n  json: {\n    ...$json,\n    conversationId: $json.conversationId || '',\n    wantsSupportPerson,\n    asksForTicketId,\n    genericSupportOnly,\n    hasIssueDetails,\n    awaitingTicketDetails,\n    shouldAskForDetails,\n    shouldCreateTicket,\n    ticketReason,\n    reuse_existing_ticket: reuseExistingTicket,\n    route_to_existing_response: routeToExistingResponse,\n    existing_ticket_id: reuseExistingTicket ? existingTicketId : null,\n    assigned_to: assignedTo,\n    assigned_to_name: assignedToName,\n    assigned_teams_webhook: assignedTeamsWebhook,\n    escalation_to: escalationTo,\n    escalation_to_name: escalationToName,\n    escalation_teams_webhook: escalationTeamsWebhook,\n    ticketPayload: {\n      ticket_title: intent.error_code\n        ? `Issue related to ${intent.error_code}`\n        : (\n            issue.matched_issue &&\n            issue.matched_issue !== 'no_match'\n              ? issue.matched_issue\n              : 'Manual support ticket'\n          ),\n      ticket_description:\n        intent.normalized_user_need ||\n        $json.attachment_summary ||\n        $json.message ||\n        'Manual support review needed',\n      category:\n        issue.matched_issue &&\n        issue.matched_issue !== 'no_match'\n          ? issue.matched_issue\n          : 'manual_ticket',\n      priority: intent.intent === 'error_code_issue' ? 'High' : 'Medium',\n      assigned_to: assignedTo,\n      assigned_to_name: assignedToName,\n      escalation_to: escalationTo,\n      escalation_to_name: escalationToName,\n      created_from_conversation: $json.conversationId || '',\n      original_message: $json.message || ''\n    },\n    messageId: $json.messageId || '',\n    originalCategory:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n    originalMessage: $json.message || '',\n    originalIntent: intent.intent || 'general_issue',\n    issue_summary:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.normalized_user_need || $json.attachment_summary || $json.message || '')\n  }\n}];"
+            },
+            "id": "9a8091e7-de84-4223-8355-f67f9cf34942",
+            "name": "Prepare Ticket Payload1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -64,
+                464
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{ Boolean($json.route_to_existing_response) }}",
+                            "rightValue": true,
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "equals"
+                            },
+                            "id": "reuse-existing-ticket-condition"
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "6df0e44e-ff82-4d75-b8e3-8656a4d2e7a1",
+            "name": "Reuse Existing Ticket?1",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                160,
+                464
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ticketId = $json.existing_ticket_id || null;\nconst originalMessage = ($json.originalMessage || '').toLowerCase();\n\nlet response = '';\nlet category = 'existing_ticket_reused';\nlet finalTicketId = ticketId;\n\nif ($json.shouldAskForDetails) {\n  response = 'Sure, please briefly describe the issue so I can create the right support ticket.';\n  category = 'support_request_pending_details';\n  finalTicketId = null;\n} else if ($json.asksForTicketId && !ticketId) {\n  response = 'I could not find an existing support ticket in this chat.';\n  category = 'ticket_lookup_not_found';\n  finalTicketId = null;\n} else if (ticketId) {\n  response = `You already have an active support ticket for this chat. Ticket ID: ${ticketId}.`;\n\n  if (/ticket id|my ticket|existing ticket|ticket number/i.test(originalMessage)) {\n    response = `Your existing support ticket ID is ${ticketId}.`;\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: category,\n    final_ticket_id: finalTicketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category,\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || '',\n      ticket_id: finalTicketId\n    }\n  }\n}];"
+            },
+            "id": "0a6e272c-3c43-46e7-8aae-cb51de7d0e5c",
+            "name": "Prepare Existing Ticket Response1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                384,
+                272
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{\n{\n  \"response\": $json.final_response_text || \"\",\n  \"sender\": \"AI Assistant\",\n  \"category\": $json.final_category || \"support\",\n  \"originalMessageId\": $json.messageId || \"\",\n  \"conversationId\": $json.conversationId || \"\",\n  \"ticket_id\": $json.final_ticket_id || null\n}\n}}",
+                "options": {}
+            },
+            "id": "bb8829b2-062d-4445-ac0e-ec7e39fe10d4",
+            "name": "Send Existing Ticket Response1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                608,
+                176
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.originalMessage || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.originalIntent || 'general_issue',\n    matched_issue: 'existing_ticket_reused',\n    issue_summary: $json.issue_summary || $json.originalMessage || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: $json.final_ticket_id || $json.existing_ticket_id || null,\n    messageId: $json.messageId || ''\n  }\n}];"
+            },
+            "id": "5e98e786-482e-44b8-a4be-b51071af3149",
+            "name": "Prepare Existing Ticket Memory1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                608,
+                368
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "ee42bc8d-3d0b-462c-8621-18222ff316ca",
+            "name": "Save Existing Ticket Memory1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                832,
+                368
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/tickets",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.ticketPayload }}",
+                "options": {}
+            },
+            "id": "59519f97-b76c-47bc-95ae-6030e4a63f29",
+            "name": "Create Ticket1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                384,
+                656
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const ticketResponse = $input.first().json;\nconst source = $('Prepare Ticket Payload1').first().json;\n\nconst ticketId = ticketResponse.ticket_id || ticketResponse.id || 'generated';\n\nconst response = `I could not resolve this confidently, so I created a support ticket for you. Ticket ID: ${ticketId}. The issue has been shared with ${source.assigned_to_name}.`;\n\nreturn [{\n  json: {\n    ...source,\n    ticket_create_response: ticketResponse,\n    final_response_text: response,\n    final_category: 'manual_ticket',\n    final_ticket_id: ticketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: 'manual_ticket',\n      originalMessageId: source.messageId || '',\n      conversationId: source.conversationId || '',\n      ticket_id: ticketId\n    }\n  }\n}];"
+            },
+            "id": "0158090d-b3b0-463c-8b7a-0b04aa4a18a8",
+            "name": "Prepare Ticket Ack1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                608,
+                656
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "452f759e-4f08-41ba-aff6-71834424a514",
+            "name": "Send Ticket Ack1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                832,
+                560
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const source = $('Prepare Ticket Ack1').first().json;\n\nreturn [{\n  json: {\n    conversationId: source.conversationId || '',\n    user_message: source.originalMessage || '',\n    assistant_message: source.final_response_text || '',\n    user_query: source.originalMessage || '',\n    intent: source.originalIntent || 'general_issue',\n    matched_issue: source.final_category || source.originalCategory || 'manual_ticket',\n    issue_summary: source.issue_summary || source.originalMessage || '',\n    attachment_summary: source.attachment_summary || '',\n    ticket_id: source.final_ticket_id || null,\n    messageId: source.messageId || '',\n    assigned_to: source.assigned_to || null,\n    assigned_to_name: source.assigned_to_name || null,\n    escalation_to: source.escalation_to || null,\n    escalation_to_name: source.escalation_to_name || null,\n    escalation_teams_webhook: source.escalation_teams_webhook || null,\n    status: 'open',\n    responded_at: null,\n    escalated: false\n  }\n}];"
+            },
+            "id": "97ce9fdb-8e91-403b-bac7-2830ea0e5f9b",
+            "name": "Prepare Ticket Memory1",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                832,
+                752
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "9b67094b-86a2-4aad-9195-c067be2f6fd4",
+            "name": "Save Ticket Memory1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1056,
+                752
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{\n{\n  \"text\":\n    \"New support ticket created\\n\\n\" +\n    \"Ticket ID: \" + ($json.final_ticket_id || \"\") + \"\\n\" +\n    \"Assigned To: \" + ($json.assigned_to_name || \"\") + \"\\n\" +\n    \"Category: \" + ($json.originalCategory || \"\") + \"\\n\" +\n    \"Priority: \" + ($json.ticketPayload?.priority || \"Medium\") + \"\\n\" +\n    \"User Message: \" + ($json.originalMessage || \"\") + \"\\n\" +\n    \"Issue Summary: \" + ($json.issue_summary || \"\") + \"\\n\" +\n    \"Conversation ID: \" + ($json.conversationId || \"\")\n}\n}}",
+                "options": {}
+            },
+            "id": "caa2d978-2517-436d-80fd-c7e21d6162fc",
+            "name": "Send Teams Ticket Notification",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                832,
+                944
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 1
+                    },
+                    "conditions": [
+                        {
+                            "leftValue": "={{$json.fast_intent}}",
+                            "rightValue": "other",
+                            "operator": {
+                                "type": "string",
+                                "operation": "notEquals"
+                            },
+                            "id": "9269ef80-028f-4b43-bf8b-eff009425456"
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "ca42f92a-d8b3-442a-af61-027c83cd54ea",
+            "name": "Is fast_Greeting?2",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                -2784,
+                368
             ]
         },
         {
@@ -416,569 +1186,99 @@
             "type": "n8n-nodes-base.if",
             "typeVersion": 2.3,
             "position": [
-                2208,
-                12336
+                -1312,
+                368
             ],
-            "id": "f29fce54-5c57-4b63-a390-cfdd4f2638ff",
-            "name": "If"
-        },
-        {
-            "parameters": {
-                "jsCode": "return [{\n  json: {\n    ...$json,\n    apiPayload: {\n      response: \"Couldn't understand the text kindly describe your issue again\",\n      sender: 'AI Assistant',\n      category: 'gibberish',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
-            },
-            "id": "c527f4f1-3061-4055-98aa-7d248ecc380f",
-            "name": "Send Empty Response1",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                2432,
-                12432
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/send-response",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json.apiPayload }}",
-                "options": {}
-            },
-            "id": "17265b40-bbe6-49c3-af74-5a691643fbc2",
-            "name": "Send Gibberish Response",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                2720,
-                12432
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const item = $input.first().json;\n\nconst kb = [\n  {\n    short_issue: '404 Not Found',\n    short_resolution_or_hint: 'The requested resource or endpoint does not exist. Verify the URL or webhook path.',\n    example_subjects: ['Webhook not registered', 'API endpoint not found']\n  },\n  {\n    short_issue: '401 Unauthorized',\n    short_resolution_or_hint: 'Authentication failed. Check API keys, tokens, or login credentials.',\n    example_subjects: ['Invalid API token']\n  },\n  {\n    short_issue: '403 Forbidden',\n    short_resolution_or_hint: 'Access to the resource is denied. Ensure proper permissions are granted.',\n    example_subjects: ['Permission denied']\n  },\n  {\n    short_issue: '500 Internal Server Error',\n    short_resolution_or_hint: 'The server encountered an unexpected condition. Check backend logs for details.',\n    example_subjects: ['Server crashed while processing request']\n  },\n  {\n    short_issue: '503 Service Unavailable',\n    short_resolution_or_hint: 'The service is temporarily unavailable due to overload or maintenance. Retry later.',\n    example_subjects: ['Service temporarily unavailable']\n  },\n  {\n    short_issue: 'Payment or invoice issue',\n    short_resolution_or_hint: 'Check invoice upload, payment status, approval stage, or missing UTR.',\n    example_subjects: ['Payment pending', 'Invoice issue']\n  },\n  {\n    short_issue: 'System access not working',\n    short_resolution_or_hint: 'Verify login rights, reset password, or enable the account.',\n    example_subjects: ['Unable to login']\n  },\n  {\n    short_issue: 'Bank account or IFSC update',\n    short_resolution_or_hint: 'Verify bank details and update the account number or IFSC correctly.',\n    example_subjects: ['Bank details update']\n  },\n  {\n    short_issue: 'Loan disbursement pending',\n    short_resolution_or_hint: 'Check the disbursement stage, bank validation, or pending borrower action.',\n    example_subjects: ['Disbursement pending']\n  },\n  {\n    short_issue: 'Ticket follow-up or no response',\n    short_resolution_or_hint: 'Check ticket age and escalate if it has been pending too long.',\n    example_subjects: ['No response on ticket']\n  },\n  {\n    short_issue: 'Password reset request',\n    short_resolution_or_hint: 'Reset the password or follow the account recovery flow.',\n    example_subjects: ['Password reset']\n  },\n  {\n    short_issue: 'App or portal bug',\n    short_resolution_or_hint: 'Check the affected page, error pattern, browser, and recent changes.',\n    example_subjects: ['Portal issue']\n  },\n  {\n    short_issue: 'Unable to submit form',\n    short_resolution_or_hint: 'Check mandatory fields, validation errors, session expiry, or access rights.',\n    example_subjects: ['Form submission failed']\n  },\n  {\n    short_issue: 'Document not opening or corrupted',\n    short_resolution_or_hint: 'Check the file format/version or ask for the document to be resent.',\n    example_subjects: ['File not opening']\n  },\n  {\n    short_issue: 'Meeting link not working',\n    short_resolution_or_hint: 'Verify the meeting link, invite permissions, and the correct signed-in account.',\n    example_subjects: ['Meeting link issue']\n  }\n];\n\nreturn [{\n  json: {\n    ...item,\n    kb\n  }\n}];"
-            },
-            "id": "dcbe51b6-d426-46e6-95da-f1378f2af627",
-            "name": "KB Lookup",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                2432,
-                12240
-            ]
-        },
-        {
-            "parameters": {
-                "modelId": {
-                    "__rl": true,
-                    "value": "models/gemini-3-flash-preview",
-                    "mode": "list",
-                    "cachedResultName": "models/gemini-3-flash-preview"
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "content": "=You are a support issue matcher.\n\nUser issue:\n{{ $json.message }}\n\nNormalized user need:\n{{ $json.parsed_intent.normalized_user_need }}\n\nAttachment summary:\n{{ $json.attachment_summary || '' }}\n\nDetected intent:\n{{ $json.parsed_intent.intent }}\n\nPossible error code:\n{{ $json.parsed_intent.error_code || $json.possibleErrorCode || '' }}\n\nPrevious conversation:\n{{ JSON.stringify(($json.history || []).slice(-6)) }}\n\nKnowledge base:\n{{ JSON.stringify($json.kb) }}\n\nInstructions:\n- Match the user's issue to the closest KB entry by meaning.\n- Use the attachment summary if the text message is short or vague.\n- Use previous conversation when the latest message is vague, such as 'same issue', 'still pending', or 'not resolved yet'.\n- If the user has an error code like 404/401/403/500/503, prioritize matching the corresponding KB error entry.\n- If the user is asking to contact support, talk to a human, escalate, or connect to a support person, return matched_issue as \"no_match\".\n- If the user asks for their ticket ID, do not invent one. Return matched_issue as \"no_match\" and leave ticket reuse to the workflow logic.\n- If there is no clear match, return matched_issue as \"no_match\".\n- Return JSON only.\n\nOutput format:\n{\n  \"matched_issue\": \"string\",\n  \"short_resolution_or_hint\": \"string\",\n  \"confidence\": 0.0,\n  \"needs_ticket\": false\n}"
-                        }
-                    ]
-                },
-                "builtInTools": {},
-                "options": {}
-            },
-            "id": "de9a5fde-539c-4e6d-aa06-440f91fe068d",
-            "name": "Issue Matcher",
-            "type": "@n8n/n8n-nodes-langchain.googleGemini",
-            "typeVersion": 1.1,
-            "position": [
-                2656,
-                12240
-            ],
-            "credentials": {
-                "googlePalmApi": {
-                    "id": "VU4lYlt9NwCfUiPY",
-                    "name": "Google Gemini(PaLM) Api account 7"
-                }
-            }
-        },
-        {
-            "parameters": {
-                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('KB Lookup').item.json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    matched_issue: 'no_match',\n    short_resolution_or_hint: 'I could not confidently match this issue to the knowledge base.',\n    confidence: 0,\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_issue: parsed\n  }\n}];"
-            },
-            "id": "0127a32d-4a88-4610-879e-906c090ec7a4",
-            "name": "Parse Issue Match",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                3008,
-                12240
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": false,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 2
-                    },
-                    "conditions": [
-                        {
-                            "leftValue": "={{ $json.parsed_issue.matched_issue }}",
-                            "rightValue": "no_match",
-                            "operator": {
-                                "type": "string",
-                                "operation": "notEquals"
-                            }
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {}
-            },
-            "id": "d2c283c9-f181-4a14-bada-b61ece00ab31",
-            "name": "Matched KB?",
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2,
-            "position": [
-                3232,
-                12240
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\n\nlet response = issue.short_resolution_or_hint || 'I found a likely match for your issue.';\n\nif (intent.intent === 'follow_up') {\n  response = `This looks like a follow-up to your earlier issue. ${response}`;\n}\n\nif (intent.needs_ocr) {\n  response += ' If the screenshot or PDF contains the main error, make sure it is clearly visible so OCR can be added later.';\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: issue.matched_issue || intent.intent || 'general_issue',\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: issue.matched_issue || intent.intent || 'general_issue',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || ''\n    }\n  }\n}];"
-            },
-            "id": "68d820dd-2a4c-4627-b50d-575f5f2b9c85",
-            "name": "Prepare KB Response",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                3456,
-                11952
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/send-response",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json.apiPayload }}",
-                "options": {}
-            },
-            "id": "aa6c9684-3dd1-4c33-9128-6d542ccbb028",
-            "name": "Send KB Response",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                3680,
-                11856
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.message || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.parsed_intent?.intent || 'general_issue',\n    matched_issue: $json.final_category || $json.parsed_issue?.matched_issue || 'general_issue',\n    issue_summary: $json.parsed_issue?.matched_issue || $json.parsed_intent?.normalized_user_need || $json.attachment_summary || $json.message || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: null,\n    messageId: $json.messageId || ''\n  }\n}];"
-            },
-            "id": "61dbd322-af0d-4b37-9ca5-0678effb5e47",
-            "name": "Prepare KB Memory",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                3680,
-                12048
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json }}",
-                "options": {}
-            },
-            "id": "abae965b-b157-4c0e-89ad-8a9a2b1b1afd",
-            "name": "Save KB Memory",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                3904,
-                12048
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const intent = $json.parsed_intent || {};\nconst issue = $json.parsed_issue || {};\nconst message = ($json.message || '').toLowerCase().trim();\nconst existingTicketId = $json.latest_ticket_id || null;\nconst history = Array.isArray($json.history) ? $json.history : [];\n\nconst wantsSupportPerson = /contact support|support person|human support|talk to support|connect me to support|connect to support|agent|human agent|representative|real person|customer care|escalate/i.test(message);\nconst asksForTicketId = /ticket id|existing ticket|my ticket|previous ticket|show ticket|ticket number/i.test(message);\n\nconst hasManualTicketInThisChat = history.some(h =>\n  h.ticket_id &&\n  (h.matched_issue === 'manual_ticket' || h.matched_issue === 'existing_ticket_reused')\n);\n\nconst reuseExistingTicket =\n  !!existingTicketId &&\n  hasManualTicketInThisChat &&\n  (\n    wantsSupportPerson ||\n    asksForTicketId ||\n    issue.matched_issue === 'no_match'\n  );\n\nreturn [{\n  json: {\n    ...$json,\n    conversationId: $json.conversationId || '',\n    reuse_existing_ticket: reuseExistingTicket,\n    existing_ticket_id: reuseExistingTicket ? existingTicketId : null,\n    ticketPayload: {\n      ticket_title: intent.error_code\n        ? `Issue related to ${intent.error_code}`\n        : (\n            issue.matched_issue &&\n            issue.matched_issue !== 'no_match'\n              ? issue.matched_issue\n              : 'Manual support ticket'\n          ),\n      ticket_description:\n        intent.normalized_user_need ||\n        $json.attachment_summary ||\n        $json.message ||\n        'Manual support review needed',\n      category:\n        issue.matched_issue &&\n        issue.matched_issue !== 'no_match'\n          ? issue.matched_issue\n          : (intent.intent || 'general_issue'),\n      priority: intent.intent === 'error_code_issue' ? 'High' : 'Medium'\n    },\n    messageId: $json.messageId || '',\n    originalCategory:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.intent || 'general_issue'),\n    originalMessage: $json.message || '',\n    originalIntent: intent.intent || 'general_issue',\n    issue_summary:\n      issue.matched_issue &&\n      issue.matched_issue !== 'no_match'\n        ? issue.matched_issue\n        : (intent.normalized_user_need || $json.attachment_summary || $json.message || '')\n  }\n}];"
-            },
-            "id": "bed741d5-2101-455f-9058-6a19fe19eb7f",
-            "name": "Prepare Ticket Payload",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                3456,
-                12432
-            ]
-        },
-        {
-            "parameters": {
-                "conditions": {
-                    "options": {
-                        "caseSensitive": true,
-                        "leftValue": "",
-                        "typeValidation": "strict",
-                        "version": 1
-                    },
-                    "conditions": [
-                        {
-                            "leftValue": "={{ $json.reuse_existing_ticket }}",
-                            "rightValue": true,
-                            "operator": {
-                                "type": "boolean",
-                                "operation": "equals"
-                            },
-                            "id": "reuse-existing-ticket-condition"
-                        }
-                    ],
-                    "combinator": "and"
-                },
-                "options": {}
-            },
-            "id": "fc361ca0-d454-4e84-a60f-fe9f422b3989",
-            "name": "Reuse Existing Ticket?",
-            "type": "n8n-nodes-base.if",
-            "typeVersion": 2,
-            "position": [
-                3680,
-                12432
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const ticketId = $json.existing_ticket_id;\n\nlet response = `You already have an active support ticket for this chat. Ticket ID: ${ticketId}. I have kept the same ticket open and your request will continue there.`;\n\nif (/ticket id|my ticket|existing ticket|ticket number/i.test(($json.originalMessage || '').toLowerCase())) {\n  response = `Your existing support ticket ID is ${ticketId}.`;\n}\n\nreturn [{\n  json: {\n    ...$json,\n    final_response_text: response,\n    final_category: 'existing_ticket_reused',\n    final_ticket_id: ticketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: 'existing_ticket_reused',\n      originalMessageId: $json.messageId || '',\n      conversationId: $json.conversationId || '',\n      ticket_id: ticketId\n    }\n  }\n}];"
-            },
-            "id": "1d830a72-3b56-4b1a-8310-8d3cce464105",
-            "name": "Prepare Existing Ticket Response",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                3904,
-                12240
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/send-response",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json.apiPayload }}",
-                "options": {}
-            },
-            "id": "2d125ca5-0b0b-49ae-a830-3aba52c32ec8",
-            "name": "Send Existing Ticket Response",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                4128,
-                12144
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.originalMessage || '',\n    assistant_message: $json.final_response_text || '',\n    intent: $json.originalIntent || 'general_issue',\n    matched_issue: 'existing_ticket_reused',\n    issue_summary: $json.issue_summary || $json.originalMessage || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: $json.final_ticket_id || $json.existing_ticket_id || null,\n    messageId: $json.messageId || ''\n  }\n}];"
-            },
-            "id": "084117bb-2e01-4625-be10-f09290a8a388",
-            "name": "Prepare Existing Ticket Memory",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                4128,
-                12336
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json }}",
-                "options": {}
-            },
-            "id": "d6f277be-38ed-4663-a86c-9fb8eef685b6",
-            "name": "Save Existing Ticket Memory",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                4352,
-                12336
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/tickets",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json.ticketPayload }}",
-                "options": {}
-            },
-            "id": "beb5e398-45a7-44ef-812a-1ea3b9e24333",
-            "name": "Create Ticket",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                3904,
-                12624
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const ticketResponse = $input.first().json;\nconst source = $('Prepare Ticket Payload').first().json;\n\nconst ticketId = ticketResponse.ticket_id || ticketResponse.id || 'generated';\nconst response = `I could not find a confident knowledge-base match, so I created a support ticket for you. Ticket ID: ${ticketId}. Our team will contact you shortly.`;\n\nreturn [{\n  json: {\n    ...source,\n    ticket_create_response: ticketResponse,\n    final_response_text: response,\n    final_category: 'manual_ticket',\n    final_ticket_id: ticketId,\n    apiPayload: {\n      response,\n      sender: 'AI Assistant',\n      category: 'manual_ticket',\n      originalMessageId: source.messageId || '',\n      conversationId: source.conversationId || '',\n      ticket_id: ticketId\n    }\n  }\n}];"
-            },
-            "id": "8669ad2b-1d58-4efd-ae7f-23afb86a947b",
-            "name": "Prepare Ticket Ack",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                4128,
-                12624
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/send-response",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json.apiPayload }}",
-                "options": {}
-            },
-            "id": "69ba3e65-fe82-4ff9-a897-9e2b73398bca",
-            "name": "Send Ticket Ack",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                4352,
-                12528
-            ]
-        },
-        {
-            "parameters": {
-                "jsCode": "const source = $('Prepare Ticket Ack').first().json;\n\nreturn [{\n  json: {\n    conversationId: source.conversationId || '',\n    user_message: source.originalMessage || '',\n    assistant_message: source.final_response_text || '',\n    intent: source.originalIntent || 'general_issue',\n    matched_issue: source.final_category || source.originalCategory || 'manual_ticket',\n    issue_summary: source.issue_summary || source.originalMessage || '',\n    attachment_summary: source.attachment_summary || '',\n    ticket_id: source.final_ticket_id || null,\n    messageId: source.messageId || ''\n  }\n}];"
-            },
-            "id": "eaa59c90-f298-4205-87d8-7124c085fa25",
-            "name": "Prepare Ticket Memory",
-            "type": "n8n-nodes-base.code",
-            "typeVersion": 2,
-            "position": [
-                4352,
-                12720
-            ]
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
-                "sendBody": true,
-                "specifyBody": "json",
-                "jsonBody": "={{ $json }}",
-                "options": {}
-            },
-            "id": "27dfbc21-13c8-4930-b677-c713bae44701",
-            "name": "Save Ticket Memory",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 4.2,
-            "position": [
-                4576,
-                12720
-            ]
+            "id": "f824f540-6d95-4087-b5bb-213754660741",
+            "name": "Is gibberish?"
         }
     ],
     "pinData": {},
     "connections": {
-        "Webhook1": {
+        "Extract Attachment Text1": {
             "main": [
                 [
                     {
-                        "node": "Extract Message Data1",
+                        "node": "Merge Attachment Context1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Extract Message Data1": {
+        "Merge Attachment Context1": {
             "main": [
                 [
                     {
-                        "node": "Normalize Input",
+                        "node": "Empty Message?2",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook2": {
+            "main": [
+                [
+                    {
+                        "node": "Extract Message Data2",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Extract Message Data2": {
+            "main": [
+                [
+                    {
+                        "node": "Normalize Input2",
                         "type": "main",
                         "index": 0
                     },
                     {
-                        "node": "Merge Input + Memory",
+                        "node": "Merge Input + Memory2",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Normalize Input": {
+        "Normalize Input2": {
             "main": [
                 [
                     {
-                        "node": "Load Memory",
+                        "node": "Load Memory2",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Load Memory": {
+        "Load Memory2": {
             "main": [
                 [
                     {
-                        "node": "Merge Input + Memory",
+                        "node": "Merge Input + Memory2",
                         "type": "main",
                         "index": 1
                     }
                 ]
             ]
         },
-        "Merge Input + Memory": {
+        "Merge Input + Memory2": {
             "main": [
                 [
                     {
-                        "node": "Build Conversation Context",
+                        "node": "Build Conversation Context2",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Build Conversation Context": {
+        "Build Conversation Context2": {
             "main": [
-                [
-                    {
-                        "node": "Extract Attachment Text",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Extract Attachment Text": {
-            "main": [
-                [
-                    {
-                        "node": "Merge Attachment Context",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Merge Attachment Context": {
-            "main": [
-                [
-                    {
-                        "node": "Empty Message?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Empty Message?": {
-            "main": [
-                [
-                    {
-                        "node": "Prepare Empty Response",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
-                [
-                    {
-                        "node": "Intent Classifier",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Prepare Empty Response": {
-            "main": [
-                [
-                    {
-                        "node": "Send Empty Response",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Intent Classifier": {
-            "main": [
-                [
-                    {
-                        "node": "Parse Intent",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Parse Intent": {
-            "main": [
-                [
-                    {
-                        "node": "Issue recall handler",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Issue recall handler": {
-            "main": [
-                [
-                    {
-                        "node": "Recall node",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
-                [
-                    {
-                        "node": "Is Greeting?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Recall node": {
-            "main": [
-                [
-                    {
-                        "node": "Send Recall Response1",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Is Greeting?": {
-            "main": [
-                [
-                    {
-                        "node": "Prepare Greeting Response",
-                        "type": "main",
-                        "index": 0
-                    }
-                ],
                 [
                     {
                         "node": "If",
@@ -988,27 +1288,56 @@
                 ]
             ]
         },
-        "Prepare Greeting Response": {
+        "Empty Message?2": {
             "main": [
                 [
                     {
-                        "node": "Send Greeting Response",
+                        "node": "Prepare Empty Response2",
                         "type": "main",
                         "index": 0
-                    },
+                    }
+                ],
+                [
                     {
-                        "node": "Prepare Greeting Memory",
+                        "node": "Greetings classifier",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare Greeting Memory": {
+        "Prepare Empty Response2": {
             "main": [
                 [
                     {
-                        "node": "Save Greeting Memory",
+                        "node": "Send Empty Response4",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Greeting Response2": {
+            "main": [
+                [
+                    {
+                        "node": "Send Greeting Response2",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Greeting Memory2",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Greeting Memory2": {
+            "main": [
+                [
+                    {
+                        "node": "Save Greeting Memory2",
                         "type": "main",
                         "index": 0
                     }
@@ -1019,197 +1348,457 @@
             "main": [
                 [
                     {
-                        "node": "Send Empty Response1",
+                        "node": "Extract Attachment Text1",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "KB Lookup",
+                        "node": "Merge Attachment Context1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Send Empty Response1": {
+        "Greetings classifier": {
             "main": [
                 [
                     {
-                        "node": "Send Gibberish Response",
+                        "node": "Is fast_Greeting?2",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "KB Lookup": {
+        "Issue recall handler1": {
             "main": [
                 [
                     {
-                        "node": "Issue Matcher",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Issue Matcher": {
-            "main": [
-                [
-                    {
-                        "node": "Parse Issue Match",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Parse Issue Match": {
-            "main": [
-                [
-                    {
-                        "node": "Matched KB?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Matched KB?": {
-            "main": [
-                [
-                    {
-                        "node": "Prepare KB Response",
+                        "node": "Recall node1",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "Prepare Ticket Payload",
+                        "node": "Is gibberish?",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare KB Response": {
+        "Recall node1": {
             "main": [
                 [
                     {
-                        "node": "Send KB Response",
+                        "node": "Send Recall Response",
                         "type": "main",
                         "index": 0
                     },
                     {
-                        "node": "Prepare KB Memory",
+                        "node": "Code in JavaScript1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare KB Memory": {
+        "Is attachment info request?1": {
             "main": [
                 [
                     {
-                        "node": "Save KB Memory",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Prepare Ticket Payload": {
-            "main": [
-                [
-                    {
-                        "node": "Reuse Existing Ticket?",
-                        "type": "main",
-                        "index": 0
-                    }
-                ]
-            ]
-        },
-        "Reuse Existing Ticket?": {
-            "main": [
-                [
-                    {
-                        "node": "Prepare Existing Ticket Response",
+                        "node": "Check answer in memory1",
                         "type": "main",
                         "index": 0
                     }
                 ],
                 [
                     {
-                        "node": "Create Ticket",
+                        "node": "Issue recall handler1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare Existing Ticket Response": {
+        "Prepare attachment info Memory": {
             "main": [
                 [
                     {
-                        "node": "Send Existing Ticket Response",
+                        "node": "Info search1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare attachment info response1": {
+            "main": [
+                [
+                    {
+                        "node": "share requested info1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Info search1": {
+            "main": [
+                [
+                    {
+                        "node": "Parse attachment info response1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse attachment info response1": {
+            "main": [
+                [
+                    {
+                        "node": "Send asked information1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check answer in memory1": {
+            "main": [
+                [
+                    {
+                        "node": "Has attachment in memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has attachment in memory1": {
+            "main": [
+                [
+                    {
+                        "node": "Send asked information5",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Prepare attachment info Memory",
                         "type": "main",
                         "index": 0
                     },
                     {
-                        "node": "Prepare Existing Ticket Memory",
+                        "node": "Prepare attachment info response1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare Existing Ticket Memory": {
+        "Code in JavaScript1": {
             "main": [
                 [
                     {
-                        "node": "Save Existing Ticket Memory",
+                        "node": "share requested info5",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Create Ticket": {
+        "Intent Classifier1": {
             "main": [
                 [
                     {
-                        "node": "Prepare Ticket Ack",
+                        "node": "Parse Intent1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare Ticket Ack": {
+        "Parse Intent1": {
             "main": [
                 [
                     {
-                        "node": "Send Ticket Ack",
+                        "node": "Is Greeting?1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Greeting?1": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Greeting Response1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Is attachment info request?1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Greeting Response1": {
+            "main": [
+                [
+                    {
+                        "node": "Send Greeting Response1",
                         "type": "main",
                         "index": 0
                     },
                     {
-                        "node": "Prepare Ticket Memory",
+                        "node": "Prepare Greeting Memory1",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "Prepare Ticket Memory": {
+        "Prepare Greeting Memory1": {
             "main": [
                 [
                     {
-                        "node": "Save Ticket Memory",
+                        "node": "Save Greeting Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Empty Response7": {
+            "main": [
+                [
+                    {
+                        "node": "Send Gibberish Response1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "KB Lookup1": {
+            "main": [
+                [
+                    {
+                        "node": "Issue Matcher1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Issue Matcher1": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Issue Match1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Issue Match1": {
+            "main": [
+                [
+                    {
+                        "node": "Matched KB?1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Matched KB?1": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare KB Response1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Prepare Ticket Payload1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare KB Response1": {
+            "main": [
+                [
+                    {
+                        "node": "Send KB Response1",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare KB Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare KB Memory1": {
+            "main": [
+                [
+                    {
+                        "node": "Save KB Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Payload1": {
+            "main": [
+                [
+                    {
+                        "node": "Reuse Existing Ticket?1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Reuse Existing Ticket?1": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Existing Ticket Response1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Create Ticket1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Existing Ticket Response1": {
+            "main": [
+                [
+                    {
+                        "node": "Send Existing Ticket Response1",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Existing Ticket Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Existing Ticket Memory1": {
+            "main": [
+                [
+                    {
+                        "node": "Save Existing Ticket Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Ticket1": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Ticket Ack1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Ack1": {
+            "main": [
+                [
+                    {
+                        "node": "Send Ticket Ack1",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Prepare Ticket Memory1",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Send Teams Ticket Notification",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Ticket Memory1": {
+            "main": [
+                [
+                    {
+                        "node": "Save Ticket Memory1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is fast_Greeting?2": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Greeting Response2",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Intent Classifier1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is gibberish?": {
+            "main": [
+                [
+                    {
+                        "node": "Send Empty Response7",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "KB Lookup1",
                         "type": "main",
                         "index": 0
                     }
@@ -1217,17 +1806,16 @@
             ]
         }
     },
-    "active": true,
+    "active": false,
     "settings": {
         "executionOrder": "v1",
         "binaryMode": "separate",
         "availableInMCP": false
     },
-    "versionId": "e9fb4e57-1701-48bd-9e71-b288a0b0e97e",
+    "versionId": "396f442a-5bf7-4f2d-a8eb-d4487c257c69",
     "meta": {
-        "templateCredsSetupCompleted": true,
         "instanceId": "0268a196c75551f750affe93bed94017d58e91c201096757cd8f286f10d10f5c"
     },
-    "id": "u6QigvntVdxsjdYv",
+    "id": "phYeg8X0aUB8ckII",
     "tags": []
 }
