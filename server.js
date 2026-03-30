@@ -21,7 +21,7 @@ const io = socketIo(server, {
 
 const PORT = process.env.PORT || 8000;
 const N8N_WEBHOOK_URL =
-    process.env.N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook-test/chat-support';
+    process.env.N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/chat-support';
 
 // -------------------- GLOBAL STORES --------------------
 
@@ -42,6 +42,7 @@ const ticketsStore = {};
 const teamsThreadMap = {};
 
 const processedTeamsReplies = new Map();
+const moderationQueue = {};   // id -> { id, conversationId, sender, text, teamsMessageId, replyToMessageId, category, ticket_id, originalMessageId, messageId, timestamp, status:'pending' }
 let sendResponseHitCount = 0;
 
 // -------------------- HELPERS --------------------
@@ -840,16 +841,25 @@ app.post('/api/send-response', (req, res) => {
         const responseData = req.body || {};
 
         // Accept multiple possible field names safely
-        const messageText =
+        let messageText =
             responseData.replyText ||
             responseData.response ||
             responseData.message ||
             null;
 
+        // Strip &nbsp; (literal string and HTML entity) that Teams / Power Automate injects
+        if (messageText) {
+            messageText = messageText
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\u00A0/g, ' ')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+        }
+
         const teamsMessageId = responseData.teamsMessageId || null;
         const replyToMessageId = responseData.replyToMessageId || null;
         const conversationId = responseData.conversationId || null;
-        const sender = responseData.sender || responseData.source || 'AI Assistant';
+        const sender = responseData.sender || responseData.source || 'Support Agent';
 
         // Use the actual reply message id for dedupe.
         // Do NOT use replyToMessageId as primary dedupe key because all replies in the same thread
@@ -878,6 +888,22 @@ app.post('/api/send-response', (req, res) => {
             });
         }
 
+        // Filter out raw Teams attachment XML / card noise from Power Automate
+        const cleanedText = String(messageText).trim();
+        const isAttachmentNoise = /^(<attachment[^>]*>\s*<\/attachment>\s*)+$/i.test(cleanedText);
+        const isCardJson = /^\s*\{.*"@type"\s*:\s*"MessageCard"/i.test(cleanedText);
+        const isEmptyAfterStrip = cleanedText.replace(/<attachment[^>]*>\s*<\/attachment>/gi, '').trim().length === 0;
+
+        if (isAttachmentNoise || isCardJson || isEmptyAfterStrip) {
+            console.log('⚠️ TEAMS CARD/ATTACHMENT NOISE -> ignoring');
+            console.log('=============================================================\n');
+            return res.json({
+                success: true,
+                ignored: true,
+                reason: 'attachment/card noise filtered'
+            });
+        }
+
         if (processedTeamsReplies.has(dedupeKey)) {
             console.log('⚠️ DUPLICATE DETECTED -> ignoring');
             console.log('=============================================================\n');
@@ -893,6 +919,42 @@ app.post('/api/send-response', (req, res) => {
         setTimeout(() => {
             processedTeamsReplies.delete(dedupeKey);
         }, 10 * 60 * 1000);
+
+        // ---- MODERATION INTERCEPT ----
+        // Any response NOT explicitly from the AI Assistant goes through moderation.
+        // n8n always sends sender='AI Assistant'; Power Automate / Teams replies will have
+        // a different sender (or default to 'Support Agent'), so they get held.
+        const isTeamsHumanReply = sender !== 'AI Assistant';
+
+        if (isTeamsHumanReply) {
+            const modId = `mod_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            const modItem = {
+                id: modId,
+                conversationId,
+                sender,
+                text: messageText,
+                teamsMessageId,
+                replyToMessageId,
+                category: responseData.category || null,
+                ticket_id: responseData.ticket_id || null,
+                originalMessageId: responseData.originalMessageId || replyToMessageId || null,
+                messageId: responseData.messageId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                timestamp: new Date().toISOString(),
+                status: 'pending'
+            };
+
+            moderationQueue[modId] = modItem;
+            console.log('🛡️ MODERATION: Teams reply held for approval ->', modId);
+            io.emit('moderation:new', modItem);
+            console.log('=============================================================\n');
+
+            return res.json({
+                success: true,
+                held_for_moderation: true,
+                moderationId: modId
+            });
+        }
+        // ---- END MODERATION INTERCEPT ----
 
         const responseMessage = {
             type: 'response',
@@ -965,6 +1027,97 @@ app.get('/api/debug/send-response-stats', (req, res) => {
         processedTeamsRepliesSize: processedTeamsReplies.size,
         processedTeamsRepliesKeys: [...processedTeamsReplies.keys()]
     });
+});
+
+// -------------------- MODERATION ROUTES --------------------
+
+// Helper: deliver an approved moderation item to the chat
+function deliverModerationItem(item) {
+    const responseMessage = {
+        type: 'response',
+        sender: item.sender,
+        timestamp: item.timestamp,
+        text: item.text,
+        messageId: item.messageId,
+        originalMessageId: item.originalMessageId,
+        category: item.category,
+        conversationId: item.conversationId,
+        ticket_id: item.ticket_id,
+        teamsMessageId: item.teamsMessageId,
+        replyToMessageId: item.replyToMessageId
+    };
+
+    messages.push(responseMessage);
+
+    if (responseMessage.conversationId) {
+        if (!conversationMessagesStore[responseMessage.conversationId]) {
+            conversationMessagesStore[responseMessage.conversationId] = [];
+        }
+
+        conversationMessagesStore[responseMessage.conversationId].push({
+            role: 'assistant',
+            message_text: item.text,
+            assistant_message: item.text,
+            matched_issue: item.category || null,
+            ticket_id: item.ticket_id || null,
+            teamsMessageId: item.teamsMessageId,
+            replyToMessageId: item.replyToMessageId,
+            messageId: item.messageId,
+            created_at: item.timestamp
+        });
+
+        updateConversation(responseMessage.conversationId, {
+            preview: item.text
+        });
+
+        io.to(responseMessage.conversationId).emit('responseMessage', responseMessage);
+    }
+
+    return responseMessage;
+}
+
+// List all pending moderation items
+app.get('/api/moderation/queue', (req, res) => {
+    const pending = Object.values(moderationQueue)
+        .filter(item => item.status === 'pending')
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    res.json(pending);
+});
+
+// Approve a moderation item -> deliver to chat
+app.post('/api/moderation/approve/:id', (req, res) => {
+    const item = moderationQueue[req.params.id];
+    if (!item) {
+        return res.status(404).json({ error: 'Moderation item not found' });
+    }
+    if (item.status !== 'pending') {
+        return res.status(400).json({ error: `Item already ${item.status}` });
+    }
+
+    item.status = 'approved';
+    console.log('✅ MODERATION: Approved ->', item.id);
+
+    const delivered = deliverModerationItem(item);
+    io.emit('moderation:resolved', { id: item.id, status: 'approved' });
+
+    res.json({ success: true, status: 'approved', delivered });
+});
+
+// Reject a moderation item -> discard
+app.post('/api/moderation/reject/:id', (req, res) => {
+    const item = moderationQueue[req.params.id];
+    if (!item) {
+        return res.status(404).json({ error: 'Moderation item not found' });
+    }
+    if (item.status !== 'pending') {
+        return res.status(400).json({ error: `Item already ${item.status}` });
+    }
+
+    item.status = 'rejected';
+    console.log('❌ MODERATION: Rejected ->', item.id);
+    io.emit('moderation:resolved', { id: item.id, status: 'rejected' });
+
+    res.json({ success: true, status: 'rejected' });
 });
 
 // -------------------- TICKET ROUTES --------------------
@@ -1122,6 +1275,38 @@ app.post('/api/tickets/recheck', (req, res) => {
     res.json({ success: true });
 });
 
+app.get('/api/tickets/by-conversation/:conversationId', (req, res) => {
+    try {
+        const { conversationId } = req.params;
+        if (!conversationId) {
+            return res.status(400).json({ success: false, error: 'conversationId is required' });
+        }
+
+        const matchingTickets = Object.values(ticketsStore)
+            .filter(t => t.conversationId === conversationId)
+            .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+
+        if (matchingTickets.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'No tickets found for this conversation',
+                conversationId
+            });
+        }
+
+        const latest = matchingTickets[0];
+        return res.json({
+            success: true,
+            ticket_id: latest.id,
+            ticket: latest,
+            total_tickets: matchingTickets.length
+        });
+    } catch (error) {
+        console.error('\u274c Error looking up ticket by conversation:', error.message);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
 // -------------------- CONVERSATION ROUTES --------------------
 
 app.post('/api/conversations', (req, res) => {
@@ -1276,7 +1461,12 @@ app.post('/api/tickets/followup', (req, res) => {
         ticket.description = newDescription;
         ticket.category = category || ticket.category || 'followup_support';
         ticket.conversationId = conversationId || ticket.conversationId || null;
-        ticket.status = 'existing_ticket_followup';
+
+        // Only reset status if ticket is not already escalated
+        if (ticket.status !== 'escalated') {
+            ticket.status = 'existing_ticket_followup';
+        }
+
         ticket.updated_at = new Date().toISOString();
         ticket.last_response_at = new Date().toISOString();
 
@@ -1288,6 +1478,11 @@ app.post('/api/tickets/followup', (req, res) => {
             message: latest_user_message || '',
             created_at: new Date().toISOString()
         });
+
+        // Cap follow-up history at 20 entries
+        if (ticket.followups.length > 20) {
+            ticket.followups = ticket.followups.slice(-20);
+        }
 
         return res.json({
             success: true,

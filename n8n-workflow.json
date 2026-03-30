@@ -647,7 +647,7 @@
         },
         {
             "parameters": {
-                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Merge Attachment Context').first().json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
+                "jsCode": "const llmOutput = $input.first().json;\nconst original = $('Merge Attachment Context1').first().json;\n\nconst raw = llmOutput?.content?.parts?.[0]?.text || llmOutput?.text || llmOutput?.output || '';\n\nlet cleaned = String(raw)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    intent: 'unclear',\n    confidence: 0,\n    error_code: null,\n    needs_ocr: false,\n    direct_reply: null,\n    normalized_user_need: 'Could not parse model output',\n    needs_ticket: true\n  };\n}\n\nreturn [{\n  json: {\n    ...original,\n    parsed_intent: parsed\n  }\n}];"
             },
             "id": "0579d52b-67e2-4a73-be17-e6f567482f1c",
             "name": "Parse Intent1",
@@ -1111,10 +1111,10 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "=http://172.17.0.1:8000/api/send-response",
+                "url": "=https://defaulted1e38cdc228417082d81b69381f2c.0c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2550ce5f918e49fb9445d811f387ea9d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9q-QwqYZapL82iXTEjskwERNfpMuTH7PCzoSJVKe_Vo",
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={{\n{\n  \"text\":\n    \"New support ticket created\\n\\n\" +\n    \"Ticket ID: \" + ($json.final_ticket_id || \"\") + \"\\n\" +\n    \"Assigned To: \" + ($json.assigned_to_name || \"\") + \"\\n\" +\n    \"Category: \" + ($json.originalCategory || \"\") + \"\\n\" +\n    \"Priority: \" + ($json.ticketPayload?.priority || \"Medium\") + \"\\n\" +\n    \"User Message: \" + ($json.originalMessage || \"\") + \"\\n\" +\n    \"Issue Summary: \" + ($json.issue_summary || \"\") + \"\\n\" +\n    \"Conversation ID: \" + ($json.conversationId || \"\")\n}\n}}",
+                "jsonBody": "={{ {\n  \"@type\": \"MessageCard\",\n  \"@context\": \"http://schema.org/extensions\",\n  \"summary\": \"New support ticket: \" + ($json.final_ticket_id || \"\"),\n  \"themeColor\": \"0076D7\",\n  \"title\": \"New Support Ticket Created\",\n  \"text\": \"CHAT_CONVERSATION_ID: \" + ($json.conversationId || \"N/A\"),\n  \"sections\": [\n    {\n      \"facts\": [\n        { \"name\": \"Ticket ID\", \"value\": $json.final_ticket_id || \"\" },\n        { \"name\": \"Title\", \"value\": $json.ticketPayload?.ticket_title || \"Support Ticket\" },\n        { \"name\": \"Description\", \"value\": $json.issue_summary || $json.originalMessage || \"No description\" },\n        { \"name\": \"Assigned To\", \"value\": $json.assigned_to_name || \"Support Team\" },\n        { \"name\": \"Priority\", \"value\": $json.ticketPayload?.priority || \"Medium\" },\n        { \"name\": \"Status\", \"value\": \"Open\" },\n        { \"name\": \"Category\", \"value\": $json.originalCategory || \"manual_ticket\" }\n      ]\n    }\n  ]\n} }}",
                 "options": {}
             },
             "id": "caa2d978-2517-436d-80fd-c7e21d6162fc",
@@ -1191,6 +1191,214 @@
             ],
             "id": "f824f540-6d95-4087-b5bb-213754660741",
             "name": "Is gibberish?"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "followup-support-check",
+                            "leftValue": "={{ $json.parsed_intent.intent }}",
+                            "rightValue": "followup_support",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        },
+                        {
+                            "id": "has-existing-ticket-check",
+                            "leftValue": "={{ $json.has_existing_ticket }}",
+                            "rightValue": "",
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "true",
+                                "singleValue": true
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -1984,
+                1600
+            ],
+            "id": "fsp-check-01",
+            "name": "Is Followup Support?"
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "=http://172.17.0.1:8000/api/tickets/by-conversation/{{ $json.conversationId }}",
+                "options": {}
+            },
+            "id": "fsp-lookup-01",
+            "name": "Lookup Existing Ticket",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1760,
+                1600
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const lookupResult = $input.first().json;\nconst original = $('Is Followup Support?').first().json;\n\nconst ticketId =\n  lookupResult.ticket_id ||\n  original.latest_ticket_id ||\n  null;\n\nconst previousDescription =\n  lookupResult.ticket?.description ||\n  original.latest_ticket_message ||\n  '';\n\nconst latestUserMessage = original.message || '';\n\nconst mergedDescription = [\n  previousDescription ? `Previous: ${previousDescription}` : '',\n  latestUserMessage ? `Follow-up: ${latestUserMessage}` : ''\n].filter(Boolean).join('\\n\\n');\n\nconst assignedTo = 'dev1';\nconst assignedToName = 'Developer 1';\n\nlet chatResponse = '';\nif (!ticketId) {\n  chatResponse = 'I could not find an existing ticket for this conversation. Please describe your issue so I can create a new one.';\n} else {\n  chatResponse = `Your follow-up has been recorded on Ticket ID: ${ticketId}. The support team has been notified.`;\n}\n\nreturn [{\n  json: {\n    ...original,\n    followup_ticket_id: ticketId,\n    previous_ticket_description: previousDescription,\n    latest_user_message: latestUserMessage,\n    merged_description: mergedDescription,\n    assigned_to: assignedTo,\n    assigned_to_name: assignedToName,\n    has_ticket: !!ticketId,\n    followup_chat_response: chatResponse,\n    followupPayload: ticketId ? {\n      ticket_id: ticketId,\n      conversationId: original.conversationId || '',\n      latest_user_message: latestUserMessage,\n      previous_ticket_description: previousDescription,\n      merged_description: mergedDescription,\n      assigned_to: assignedTo,\n      assigned_to_name: assignedToName,\n      category: 'followup_support'\n    } : null,\n    teamsFollowupPayload: ticketId ? {\n      '@type': 'MessageCard',\n      '@context': 'http://schema.org/extensions',\n      summary: `Ticket follow-up: ${ticketId}`,\n      themeColor: 'FFA500',\n      title: 'Ticket Follow-Up',\n      text: `CHAT_CONVERSATION_ID: ${original.conversationId || 'N/A'}`,\n      sections: [\n        {\n          facts: [\n            { name: 'Ticket ID', value: ticketId },\n            { name: 'Status', value: 'Follow-Up' },\n            { name: 'Latest Message', value: latestUserMessage || 'N/A' },\n            { name: 'Previous Description', value: previousDescription ? previousDescription.slice(0, 200) : 'N/A' },\n            { name: 'Assigned To', value: assignedToName }\n          ]\n        }\n      ]\n    } : null,\n    apiPayload: {\n      response: chatResponse,\n      sender: 'AI Assistant',\n      category: 'followup_support',\n      originalMessageId: original.messageId || '',\n      conversationId: original.conversationId || '',\n      ticket_id: ticketId\n    }\n  }\n}];"
+            },
+            "id": "fsp-build-01",
+            "name": "Build Followup Ticket Payload",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -1536,
+                1600
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3
+                    },
+                    "conditions": [
+                        {
+                            "id": "has-ticket-check",
+                            "leftValue": "={{ $json.has_ticket }}",
+                            "rightValue": "true",
+                            "operator": {
+                                "type": "boolean",
+                                "operation": "true",
+                                "singleValue": true
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [
+                -1312,
+                1600
+            ],
+            "id": "fsp-hasticket-01",
+            "name": "Has Existing Ticket?"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/tickets/followup",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.followupPayload }}",
+                "options": {}
+            },
+            "id": "fsp-backend-01",
+            "name": "Send Followup to Backend",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1088,
+                1504
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://defaulted1e38cdc228417082d81b69381f2c.0c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2550ce5f918e49fb9445d811f387ea9d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9q-QwqYZapL82iXTEjskwERNfpMuTH7PCzoSJVKe_Vo",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.teamsFollowupPayload }}",
+                "options": {}
+            },
+            "id": "fsp-teams-01",
+            "name": "Send Followup Teams Notification",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -864,
+                1504
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "fsp-chatreply-01",
+            "name": "Send Followup Response to Chat",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -640,
+                1600
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "return [{\n  json: {\n    conversationId: $json.conversationId || '',\n    user_message: $json.latest_user_message || $json.message || '',\n    assistant_message: $json.followup_chat_response || '',\n    user_query: $json.latest_user_message || $json.message || '',\n    intent: 'followup_support',\n    matched_issue: 'followup_support',\n    issue_summary: $json.merged_description || $json.latest_user_message || '',\n    attachment_summary: $json.attachment_summary || '',\n    ticket_id: $json.followup_ticket_id || null,\n    messageId: $json.messageId || '',\n    file_url: $json.file_url || null,\n    file_type: $json.file_type || null,\n    file_name: $json.file_name || null\n  }\n}];"
+            },
+            "id": "fsp-memory-prep-01",
+            "name": "Prepare Followup Memory",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -416,
+                1600
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/chat-memory/save-turn",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json }}",
+                "options": {}
+            },
+            "id": "fsp-memory-save-01",
+            "name": "Save Followup Memory",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -192,
+                1600
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://172.17.0.1:8000/api/send-response",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ $json.apiPayload }}",
+                "options": {}
+            },
+            "id": "fsp-noticket-reply-01",
+            "name": "Send No Ticket Response",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -1088,
+                1696
+            ]
         }
     ],
     "pinData": {},
@@ -1547,7 +1755,7 @@
                 ],
                 [
                     {
-                        "node": "Is attachment info request?1",
+                        "node": "Is Followup Support?",
                         "type": "main",
                         "index": 0
                     }
@@ -1799,6 +2007,96 @@
                 [
                     {
                         "node": "KB Lookup1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is Followup Support?": {
+            "main": [
+                [
+                    {
+                        "node": "Lookup Existing Ticket",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Is attachment info request?1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Lookup Existing Ticket": {
+            "main": [
+                [
+                    {
+                        "node": "Build Followup Ticket Payload",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Followup Ticket Payload": {
+            "main": [
+                [
+                    {
+                        "node": "Has Existing Ticket?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Has Existing Ticket?": {
+            "main": [
+                [
+                    {
+                        "node": "Send Followup to Backend",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Send Followup Teams Notification",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Send Followup Response to Chat",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Send No Ticket Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Followup Response to Chat": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Followup Memory",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Followup Memory": {
+            "main": [
+                [
+                    {
+                        "node": "Save Followup Memory",
                         "type": "main",
                         "index": 0
                     }

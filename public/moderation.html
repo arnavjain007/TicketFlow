@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moderation Queue</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+        }
+
+        .top-bar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .top-bar h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .top-bar .badge {
+            background: rgba(255, 255, 255, 0.25);
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+        }
+
+        .top-bar a {
+            color: white;
+            text-decoration: none;
+            font-size: 13px;
+            opacity: 0.85;
+        }
+
+        .top-bar a:hover {
+            opacity: 1;
+        }
+
+        .content {
+            max-width: 800px;
+            margin: 24px auto;
+            padding: 0 16px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            margin-bottom: 16px;
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+
+        .card:hover {
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            border-bottom: 1px solid #f0f0f0;
+            background: #fafbfc;
+        }
+
+        .card-sender {
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .card-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .card-meta {
+            padding: 8px 18px;
+            font-size: 12px;
+            color: #777;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .card-meta span {
+            background: #f0f2f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .card-body {
+            padding: 16px 18px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #222;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            padding: 12px 18px;
+            border-top: 1px solid #f0f0f0;
+            background: #fafbfc;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-approve {
+            background: #22c55e;
+            color: white;
+        }
+
+        .btn-approve:hover:not(:disabled) {
+            background: #16a34a;
+        }
+
+        .btn-reject {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-reject:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        .resolved-label {
+            text-align: center;
+            padding: 10px 0;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .resolved-label.approved {
+            color: #16a34a;
+        }
+
+        .resolved-label.rejected {
+            color: #dc2626;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            transform: translateY(12px);
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .toast.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="top-bar">
+        <div style="display:flex; align-items:center; gap:14px;">
+            <h1>🛡️ Moderation Queue</h1>
+            <span class="badge" id="pendingBadge">0 pending</span>
+        </div>
+        <a href="/">← Back to Chat</a>
+    </div>
+
+    <div class="content" id="queueContainer">
+        <div class="empty-state" id="emptyState">
+            <div class="icon">✅</div>
+            <p>No messages pending moderation</p>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const queueContainer = document.getElementById('queueContainer');
+        const emptyState = document.getElementById('emptyState');
+        const pendingBadge = document.getElementById('pendingBadge');
+        const toastEl = document.getElementById('toast');
+
+        // In-memory map of moderation items currently displayed
+        const items = {};
+
+        // ---------- TOAST ----------
+        let toastTimer;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('visible');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.remove('visible'), 3000);
+        }
+
+        // ---------- RENDER ----------
+        function updateBadge() {
+            const count = Object.values(items).filter(i => i.status === 'pending').length;
+            pendingBadge.textContent = `${count} pending`;
+        }
+
+        function renderItem(item) {
+            let card = document.getElementById(`mod-${item.id}`);
+            if (!card) {
+                card = document.createElement('div');
+                card.className = 'card';
+                card.id = `mod-${item.id}`;
+                // Insert before empty state if it's there, or append
+                if (emptyState.parentNode === queueContainer) {
+                    queueContainer.insertBefore(card, emptyState);
+                } else {
+                    queueContainer.appendChild(card);
+                }
+            }
+
+            const time = new Date(item.timestamp).toLocaleString();
+
+            let metaParts = '';
+            if (item.conversationId) metaParts += `<span>Conv: ${escapeHtml(item.conversationId)}</span>`;
+            if (item.ticket_id) metaParts += `<span>Ticket: ${escapeHtml(item.ticket_id)}</span>`;
+            if (item.teamsMessageId) metaParts += `<span>Teams Msg</span>`;
+
+            let actionsHtml;
+            if (item.status === 'pending') {
+                actionsHtml = `
+                    <div class="card-actions">
+                        <button class="btn btn-approve" onclick="approveItem('${item.id}')">✓ Approve</button>
+                        <button class="btn btn-reject" onclick="rejectItem('${item.id}')">✗ Reject</button>
+                    </div>
+                `;
+            } else if (item.status === 'approved') {
+                actionsHtml = `<div class="resolved-label approved">✓ Approved &amp; Delivered</div>`;
+            } else {
+                actionsHtml = `<div class="resolved-label rejected">✗ Rejected &amp; Discarded</div>`;
+            }
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <span class="card-sender">${escapeHtml(item.sender)}</span>
+                    <span class="card-time">${time}</span>
+                </div>
+                ${metaParts ? `<div class="card-meta">${metaParts}</div>` : ''}
+                <div class="card-body">${escapeHtml(item.text)}</div>
+                ${actionsHtml}
+            `;
+        }
+
+        function refreshEmptyState() {
+            const hasPending = Object.values(items).some(i => i.status === 'pending');
+            emptyState.style.display = hasPending ? 'none' : '';
+        }
+
+        // ---------- API CALLS ----------
+        async function loadQueue() {
+            try {
+                const res = await fetch('/api/moderation/queue');
+                const list = await res.json();
+                list.forEach(item => {
+                    items[item.id] = item;
+                    renderItem(item);
+                });
+                updateBadge();
+                refreshEmptyState();
+            } catch (e) {
+                console.error('Failed to load moderation queue', e);
+            }
+        }
+
+        async function approveItem(id) {
+            const btns = document.querySelectorAll(`#mod-${id} .btn`);
+            btns.forEach(b => b.disabled = true);
+
+            try {
+                const res = await fetch(`/api/moderation/approve/${id}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    items[id].status = 'approved';
+                    renderItem(items[id]);
+                    showToast('Message approved & delivered to chat');
+                } else {
+                    showToast('Error: ' + (data.error || 'unknown'));
+                    btns.forEach(b => b.disabled = false);
+                }
+            } catch (e) {
+                showToast('Network error');
+                btns.forEach(b => b.disabled = false);
+            }
+            updateBadge();
+            refreshEmptyState();
+        }
+
+        async function rejectItem(id) {
+            const btns = document.querySelectorAll(`#mod-${id} .btn`);
+            btns.forEach(b => b.disabled = true);
+
+            try {
+                const res = await fetch(`/api/moderation/reject/${id}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    items[id].status = 'rejected';
+                    renderItem(items[id]);
+                    showToast('Message rejected & discarded');
+                } else {
+                    showToast('Error: ' + (data.error || 'unknown'));
+                    btns.forEach(b => b.disabled = false);
+                }
+            } catch (e) {
+                showToast('Network error');
+                btns.forEach(b => b.disabled = false);
+            }
+            updateBadge();
+            refreshEmptyState();
+        }
+
+        // ---------- REAL-TIME ----------
+        socket.on('moderation:new', (item) => {
+            items[item.id] = item;
+            renderItem(item);
+            updateBadge();
+            refreshEmptyState();
+            showToast('New Teams reply awaiting moderation');
+        });
+
+        socket.on('moderation:resolved', ({ id, status }) => {
+            if (items[id]) {
+                items[id].status = status;
+                renderItem(items[id]);
+                updateBadge();
+                refreshEmptyState();
+            }
+        });
+
+        // ---------- HELPERS ----------
+        function escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return String(text || '').replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // ---------- INIT ----------
+        loadQueue();
+    </script>
+</body>
+
+</html>
