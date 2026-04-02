@@ -37,6 +37,7 @@ package.json         — Dependencies and scripts
 - **n8n** (runs in Docker)
 - **Docker** & Docker Compose
 - (Optional) **ngrok** if you need a public URL for n8n webhooks
+- **Power Automate Premium** 
 
 ## Setup
 
