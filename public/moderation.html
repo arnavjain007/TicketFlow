@@ -186,6 +186,92 @@
             color: #dc2626;
         }
 
+        .moderation-info {
+            padding: 8px 18px;
+            font-size: 12px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .moderation-info .method-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .method-badge.script-pass {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .method-badge.llm-refined {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .method-badge.llm-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .original-text {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #fef2f2;
+            border-left: 3px solid #ef4444;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .original-text .label {
+            font-weight: 600;
+            color: #991b1b;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .refined-text {
+            margin-top: 6px;
+            padding: 8px 12px;
+            background: #f0fdf4;
+            border-left: 3px solid #22c55e;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .refined-text .label {
+            font-weight: 600;
+            color: #166534;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .issues-list {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #b91c1c;
+        }
+
+        .issues-list span {
+            background: #fee2e2;
+            padding: 1px 6px;
+            border-radius: 3px;
+            margin-right: 4px;
+        }
+
+        .ticket-info {
+            font-size: 11px;
+            color: #16a34a;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
         .toast {
             position: fixed;
             bottom: 24px;
@@ -279,14 +365,48 @@
             if (item.status === 'pending') {
                 actionsHtml = `
                     <div class="card-actions">
-                        <button class="btn btn-approve" onclick="approveItem('${item.id}')">✓ Approve</button>
+                        <button class="btn btn-approve" onclick="approveItem('${item.id}')">✓ Approve &amp; Close Ticket</button>
                         <button class="btn btn-reject" onclick="rejectItem('${item.id}')">✗ Reject</button>
                     </div>
                 `;
             } else if (item.status === 'approved') {
-                actionsHtml = `<div class="resolved-label approved">✓ Approved &amp; Delivered</div>`;
+                const ticketNote = item.ticket_id ? `<div class="ticket-info">🔒 Ticket ${escapeHtml(item.ticket_id)} closed</div>` : '';
+                actionsHtml = `<div class="resolved-label approved">✓ Approved &amp; Delivered${ticketNote}</div>`;
             } else {
                 actionsHtml = `<div class="resolved-label rejected">✗ Rejected &amp; Discarded</div>`;
+            }
+
+            // Moderation details
+            let moderationHtml = '';
+            const mod = item.moderation;
+            if (mod) {
+                let badge = '';
+                if (mod.method === 'script') badge = '<span class="method-badge script-pass">✓ Script Passed</span>';
+                else if (mod.method === 'llm_refined') badge = '<span class="method-badge llm-refined">⚠ LLM Refined</span>';
+                else if (mod.method === 'llm_rejected') badge = '<span class="method-badge llm-rejected">✗ LLM Rejected</span>';
+
+                let issuesHtml = '';
+                const issues = mod.scriptIssues || mod.issues || [];
+                if (issues.length > 0) {
+                    issuesHtml = `<div class="issues-list">Flagged: ${issues.map(i => `<span>${escapeHtml(i)}</span>`).join('')}</div>`;
+                }
+
+                let originalHtml = '';
+                if (mod.originalText && mod.originalText !== item.text) {
+                    originalHtml = `<div class="original-text"><div class="label">Original Message</div>${escapeHtml(mod.originalText)}</div>`;
+                }
+
+                let refinedHtml = '';
+                if (mod.refinedText) {
+                    refinedHtml = `<div class="refined-text"><div class="label">Refined Message (to be sent)</div>${escapeHtml(mod.refinedText)}</div>`;
+                }
+
+                let reasonHtml = '';
+                if (mod.llmReason) {
+                    reasonHtml = `<div style="font-size:12px;color:#555;margin-top:4px;">LLM: ${escapeHtml(mod.llmReason)}</div>`;
+                }
+
+                moderationHtml = `<div class="moderation-info">${badge}${issuesHtml}${originalHtml}${refinedHtml}${reasonHtml}</div>`;
             }
 
             card.innerHTML = `
@@ -296,6 +416,7 @@
                 </div>
                 ${metaParts ? `<div class="card-meta">${metaParts}</div>` : ''}
                 <div class="card-body">${escapeHtml(item.text)}</div>
+                ${moderationHtml}
                 ${actionsHtml}
             `;
         }
