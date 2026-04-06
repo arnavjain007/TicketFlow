@@ -292,12 +292,437 @@ const kb = [
         short_issue: 'Shared link is not working',
         short_resolution_or_hint: 'The link you received (via SMS, WhatsApp, or email) may have expired or is not loading correctly. Please request a new link. If the problem continues, contact support.',
         example_subjects: ['Link expired', 'Short URL not working', 'Redirect not working']
+    },
+
+    // ─────────────────────────────────────────────
+    // LMS ONBOARDING (Loan Management System Setup)
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'LMS office creation failed',
+        short_resolution_or_hint: 'The LMS office could not be created because the company\'s registered address is incomplete (street, city, or PIN missing) or the state could not be mapped. Please ensure the company has a full address including state, and try again.',
+        example_subjects: ['State ID not found for the company', 'Address is not complete for the company', 'LMS office creation error']
+    },
+    {
+        short_issue: 'LMS operation blocked — office not created yet',
+        short_resolution_or_hint: 'Several LMS operations (like adding bank details, creating a product, or onboarding a borrower) require the LMS office to be created first. Please ensure the LMS office has been set up before proceeding.',
+        example_subjects: ['No office ID found', 'Office not set up', 'LMS setup incomplete']
+    },
+    {
+        short_issue: 'LMS office config update failed',
+        short_resolution_or_hint: 'The office configuration could not be updated. Please ensure a facility is selected, the anchor open limit is set on the facility, and the Team Lead (TL) and Relationship Manager (RM) are assigned to the company.',
+        example_subjects: ['No facility selected', 'Anchor open limit not found', 'TL or RM account not selected']
+    },
+    {
+        short_issue: 'LMS product creation failed',
+        short_resolution_or_hint: 'The LMS product could not be created. This can happen if the facility short name is empty, the product already exists, or mandatory facility parameters (like discounting tenor, program limit, or rate of interest) are missing. Please fill in all required facility details.',
+        example_subjects: ['Facility short name is empty', 'Product already created', 'Mandatory parameters not found', 'No parameter configuration found']
+    },
+    {
+        short_issue: 'LMS product partially updated',
+        short_resolution_or_hint: 'The product was created or updated on LMS, but a follow-up step (like updating tenure frequency, syncing product config, or activating the retailer) failed. Please try re-syncing the product or contact support.',
+        example_subjects: ['Product created but failed to update tenure frequency', 'EMI details updated but failed to update product config', 'Product updated but failed to sync']
+    },
+    {
+        short_issue: 'LMS bank details could not be added',
+        short_resolution_or_hint: 'Bank details could not be synced to LMS. Please ensure the account number, IFSC code, and beneficiary name are all filled in. Also check that the bank details have not already been added to LMS and that the account type is valid.',
+        example_subjects: ['Bank details are incomplete', 'Bank details already exist on LMS', 'Invalid account type']
+    },
+    {
+        short_issue: 'LMS agreement template generation failed',
+        short_resolution_or_hint: 'The system could not generate or approve the agreement template on LMS. Please ensure all required facility and borrower details are complete, then try again. If this persists, contact support.',
+        example_subjects: ['Failed to generate agreement template', 'Failed to approve sections', 'Agreement creation error']
+    },
+    {
+        short_issue: 'LMS client already exists',
+        short_resolution_or_hint: 'A client record has already been created on LMS for this company. You cannot create a duplicate. If the existing record is incorrect, contact support for assistance.',
+        example_subjects: ['Client already exists for the company', 'Duplicate client creation', 'LMS client exists']
+    },
+    {
+        short_issue: 'LMS term loan creation failed',
+        short_resolution_or_hint: 'The term loan could not be created. Make sure the LMS client has been created first, the loan doesn\'t already exist for this facility, and the facility has a portfolio assigned.',
+        example_subjects: ['Client does not exist for the company', 'Loan already exists for the company', 'No portfolio ID found']
+    },
+    {
+        short_issue: 'Lender commitment is in draft state',
+        short_resolution_or_hint: 'The lender commitment (colending/co-investment) is still in draft and cannot be submitted to LMS yet. Please ensure all commitment details are finalized before submitting.',
+        example_subjects: ['Lender Commitment is in draft state', 'Cannot submit draft commitment', 'Commitment not finalized']
+    },
+
+    // ─────────────────────────────────────────────
+    // LMS BORROWER ONBOARDING
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Borrower onboarding to LMS failed',
+        short_resolution_or_hint: 'The borrower could not be onboarded on LMS. Common reasons: the company\'s incorporation type is not supported, incorporation date is missing, the proposed credit limit is not set, or mandatory parameters (like proposed limit, open limit, insurance amount) are missing. Please check all required fields.',
+        example_subjects: ['Incorporation type not supported', 'Incorporation date is empty', 'Document limit is not available', 'Mandatory fields missing']
+    },
+    {
+        short_issue: 'Borrower relation or details not found',
+        short_resolution_or_hint: 'The system could not find the link between the anchor and the borrower company. Please ensure the business relation has been properly created before attempting LMS onboarding.',
+        example_subjects: ['Borrower relation not found', 'Borrower detail not found', 'Borrower relation details not found']
+    },
+    {
+        short_issue: 'Multiple portfolios found for borrower',
+        short_resolution_or_hint: 'The borrower has more than one portfolio assigned, causing ambiguity in segment assignment. Please ensure only one portfolio is active for the borrower before proceeding.',
+        example_subjects: ['Multiple portfolios found', 'Portfolio ambiguity', 'Cannot determine segment']
+    },
+    {
+        short_issue: 'Associated entity for borrower is missing',
+        short_resolution_or_hint: 'Borrower onboarding requires at least one associated entity (such as a co-borrower or guarantor) to be added to the company. Please add the associated entity before proceeding.',
+        example_subjects: ['Please add associated entity for company', 'Co-borrower not added', 'Associated entity required']
+    },
+    {
+        short_issue: 'CIN is required for anchor onboarding',
+        short_resolution_or_hint: 'When board resolution signing is configured, the company\'s CIN (Corporate Identification Number) is mandatory for anchor onboarding. Please add the CIN to the company details and try again.',
+        example_subjects: ['CIN is mandatory for anchor onboarding', 'CIN required for BR signing', 'Missing CIN for anchor']
+    },
+    {
+        short_issue: 'Only TL can trigger LMS onboarding',
+        short_resolution_or_hint: 'For agency model facilities, only a Team Lead (TL) is authorized to trigger LMS onboarding. Please ask your Team Lead to perform this action.',
+        example_subjects: ['Only TL is authorized to perform Trigger to LMS', 'Permission denied for LMS trigger', 'TL authorization required']
+    },
+
+    // ─────────────────────────────────────────────
+    // LMS CO-BORROWER / ASSOCIATED ENTITY ONBOARDING
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Co-borrower onboarding to LMS failed',
+        short_resolution_or_hint: 'The co-borrower (associated entity) could not be onboarded. Please ensure: the parent loan has been created first, the co-borrower is not already onboarded, and all required fields (entity type, date of birth, phone number) are filled in.',
+        example_subjects: ['Parent loan ID not found', 'Associated entity already onboarded', 'Associated entity type is mandatory', 'Associated entity dob is mandatory']
+    },
+    {
+        short_issue: 'Co-borrower signing details missing',
+        short_resolution_or_hint: 'The co-borrower\'s DIN (Director Identification Number) or Designation is required for document signing but has not been filled in. Please update the co-borrower details with DIN and Designation.',
+        example_subjects: ['Missing DIN for coborrower', 'Missing Designation for coborrower', 'Signing details incomplete']
+    },
+
+    // ─────────────────────────────────────────────
+    // COMPANY & COUNTERPARTY MANAGEMENT
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Portfolio is required for this action',
+        short_resolution_or_hint: 'Most operations in the system require a portfolio to be selected or assigned. Please make sure the portfolio ID is provided in your request or that the company has a portfolio assigned.',
+        example_subjects: ['Portfolio required', 'Portfolio id required', 'No portfolio assigned']
+    },
+    {
+        short_issue: 'Form schema not found',
+        short_resolution_or_hint: 'No form schema has been configured for the selected portfolio or entity type. This means the system does not know which fields to show. Please contact your admin to set up the form schema configuration.',
+        example_subjects: ['Schema not found', 'Schema not found for Counter Party', 'Form configuration missing']
+    },
+    {
+        short_issue: 'Counterparty data validation failed',
+        short_resolution_or_hint: 'The counterparty data you submitted does not match the expected format or is missing required fields as per the configured schema. Please review all fields and ensure they comply with the validation rules.',
+        example_subjects: ['Error in validating counter party data', 'Counterparty validation error', 'Data does not match schema']
+    },
+    {
+        short_issue: 'Cannot edit record at this stage',
+        short_resolution_or_hint: 'The record is currently in a workflow stage that does not allow editing. You may need to wait for the current approval/review step to complete before making changes.',
+        example_subjects: ['Can not edit the details at this stage', 'Record locked for editing', 'Edit not allowed in current stage']
+    },
+    {
+        short_issue: 'Bank account creation or update failed',
+        short_resolution_or_hint: 'The bank account could not be created or updated. Please ensure a valid company is selected and all required bank details (account number, IFSC, account holder name) are correctly filled in.',
+        example_subjects: ['Company id is required', 'Error in creating the bank account', 'Bank account validation error']
+    },
+    {
+        short_issue: 'Virtual account creation or update failed',
+        short_resolution_or_hint: 'The virtual account could not be created or updated due to validation errors. Please check that all required virtual account fields are properly filled. If deleting, make sure the account exists.',
+        example_subjects: ['Error in creating the virtual account', 'Error in updating virtual accounts', 'Account not found']
+    },
+    {
+        short_issue: 'Brand creation or update failed',
+        short_resolution_or_hint: 'The brand could not be created or updated due to validation errors. Please check the brand name and other required fields are filled correctly.',
+        example_subjects: ['Error in creating Brand', 'Error in updating brand', 'Brand validation error']
+    },
+    {
+        short_issue: 'Industry contribution exceeds 100%',
+        short_resolution_or_hint: 'The total contribution percentage for company industry mappings cannot exceed 100%. Please adjust the contribution values so they add up to 100% or less.',
+        example_subjects: ['Total contribution cannot exceed 100%', 'Industry mapping error', 'Contribution percentage too high']
+    },
+
+    // ─────────────────────────────────────────────
+    // WARRANTS / CCPS & DISBURSEMENT DETAILS
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Warrant or CCPS creation failed',
+        short_resolution_or_hint: 'Warrant or CCPS (Compulsorily Convertible Preference Shares) creation requires the maturity date to be provided. Please fill in all mandatory fields including the maturity date.',
+        example_subjects: ['Maturity date required', 'Invalid CCPS/Warrants request', 'Error in creating the warrants']
+    },
+    {
+        short_issue: 'Disbursement fields locked before partner approval',
+        short_resolution_or_hint: 'Certain disbursement fields (like status, UTR Number, and UTR Date) cannot be added or modified until partner approval is received. Please wait for the partner approval to complete first.',
+        example_subjects: ['Status, UTR Number, UTR Date can\'t be added before partner approval', 'Disbursement locked', 'Awaiting partner approval']
+    },
+
+    // ─────────────────────────────────────────────
+    // EXCEL DATA UPLOAD & VALIDATION
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Date format error in uploaded file',
+        short_resolution_or_hint: 'A date field in the uploaded Excel file is empty or in an incorrect format. Please use the yyyy-mm-dd format (e.g., 2025-01-15) for all date fields and try uploading again.',
+        example_subjects: ['Date is empty or in an invalid format', 'Use yyyy-mm-dd format', 'Invalid date in Excel']
+    },
+    {
+        short_issue: 'Reference data not found in uploaded file',
+        short_resolution_or_hint: 'The uploaded file references a value (like a funding series, currency type, or category) that does not exist in the system. Please check that all reference values match the available options in the system.',
+        example_subjects: ['Series not found', 'Currency Type not found', 'Invalid reference value']
+    },
+    {
+        short_issue: 'Invalid number in uploaded file',
+        short_resolution_or_hint: 'A field that requires a numeric value has text or an invalid entry. Please ensure all amount, quantity, and percentage fields contain valid numbers only.',
+        example_subjects: ['Field should be a valid number', 'Non-numeric value in amount field', 'Number format error']
+    },
+
+    // ─────────────────────────────────────────────
+    // RM ASSIGNMENT & AGENT MANAGEMENT
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Relationship Manager could not be assigned',
+        short_resolution_or_hint: 'The system could not auto-assign a Relationship Manager to the company because no eligible users were found. Please ask your admin to configure RM users for this portfolio or team.',
+        example_subjects: ['Users list is empty', 'Cannot assign RM', 'No eligible RM found']
+    },
+    {
+        short_issue: 'Agent configuration incomplete for campaign',
+        short_resolution_or_hint: 'The agent could not be assigned to the campaign. Please ensure at least one agent is selected and that each agent has their Flexi Dial username configured before mapping them to a campaign.',
+        example_subjects: ['Agents can not be null', 'Set Flexy Dial Username for Agent first', 'Agent not configured']
+    },
+
+    // ─────────────────────────────────────────────
+    // COLLECTION – COUNTERPARTY & DASHBOARD
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Bulk counterparty creation failed',
+        short_resolution_or_hint: 'The batch counterparty creation could not be processed. Please ensure the secret key and customer list are provided and that a batch with the same secret key has not already been submitted.',
+        example_subjects: ['Secret key and customers can not be None', 'Batch already exists with same secret key', 'Duplicate batch submission']
+    },
+    {
+        short_issue: 'No relation between anchor and counterparty',
+        short_resolution_or_hint: 'The system could not find a business relation linking the anchor company to the counterparty. This is required for dashboard data and other operations. Please ensure the counterparty is properly linked to the anchor company.',
+        example_subjects: ['No relation exists between anchor and counterparty', 'Counterparty does not belong to this company', 'Business relation missing']
+    },
+    {
+        short_issue: 'Organization ID not found for company',
+        short_resolution_or_hint: 'The company does not have an organization ID set, which is required for collection operations and dashboard data. Please contact support to have the organization ID configured.',
+        example_subjects: ['Organization id not found for provided anchor', 'No organization id found for company', 'Invalid or missing org_id']
+    },
+    {
+        short_issue: 'Collection customer record not found',
+        short_resolution_or_hint: 'No collection customer record was found for this counterparty. The counterparty may not have been properly onboarded into the collections system. Please ensure the counterparty has been created and linked.',
+        example_subjects: ['Customer object not found for counterparty', 'Customer not found', 'No customer record']
+    },
+    {
+        short_issue: 'Collection target data not available',
+        short_resolution_or_hint: 'Collection target data could not be fetched. The collection targets may not have been configured for the selected time period. Please check the target configuration or contact your admin.',
+        example_subjects: ['Could not fetch target data', 'Target not configured', 'No target for this period']
+    },
+    {
+        short_issue: 'No collection feedback or customer state data found',
+        short_resolution_or_hint: 'No feedback records or customer state data were found for the given filters. This could mean no collection activity has been recorded yet for these criteria. Try broadening your filter criteria.',
+        example_subjects: ['No customer states found', 'No feedback records found', 'Empty collection data']
+    },
+    {
+        short_issue: 'Collection dashboard summary generation failed',
+        short_resolution_or_hint: 'The AI-powered collection dashboard summary could not be generated. This might be a temporary issue with the summary service. Please try again after a few minutes.',
+        example_subjects: ['Failed to generate dashboard summary', 'Failed to generate counterparty dashboard summary', 'Summary service error']
+    },
+    {
+        short_issue: 'Collection intelligence data could not be fetched',
+        short_resolution_or_hint: 'The collection intelligence data could not be retrieved. Please verify the company ID and counterparty ID are valid and that the counterparty belongs to the specified company.',
+        example_subjects: ['Invalid company id', 'Invalid counterparty_id', 'Intelligence data fetch failed']
+    },
+
+    // ─────────────────────────────────────────────
+    // COLLECTION – AGENCY MANAGEMENT
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Collection agency creation failed',
+        short_resolution_or_hint: 'The collection agency could not be created. An agency with the same PAN number may already exist, or the agency data is invalid. Please check the PAN number and all required agency details.',
+        example_subjects: ['Agency with this PAN number already exists', 'Invalid agency data', 'Agency creation error']
+    },
+    {
+        short_issue: 'Collection agency not found',
+        short_resolution_or_hint: 'The collection agency you are trying to update or view does not exist. Please verify the agency ID and try again.',
+        example_subjects: ['Collection agency does not exist', 'Agency not found', 'Invalid agency ID']
+    },
+    {
+        short_issue: 'Unable to fetch team members',
+        short_resolution_or_hint: 'The team member list could not be retrieved from the identity service. This may be a temporary connectivity issue. Please try again after a moment.',
+        example_subjects: ['Failed to fetch team members', 'Team member list unavailable', 'Identity service error']
+    },
+
+    // ─────────────────────────────────────────────
+    // AI CALLING – ADVANCED / CONFIGURATION
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'AI calling template download failed',
+        short_resolution_or_hint: 'The lead file template could not be downloaded. Please ensure you have selected a facility or facility type. If no Excel schema or dynamic variables are configured for this facility, contact your admin.',
+        example_subjects: ['Either facility or facility_type is required', 'No configuration found for the specified facility', 'No excel schema configured']
+    },
+    {
+        short_issue: 'AI calling bulk upload validation errors',
+        short_resolution_or_hint: 'Some records in the uploaded lead file failed validation. Common issues include: invalid PAN format, invalid mobile number, future due dates, negative outstanding amounts, or negative DPD values. Please fix the flagged records and re-upload.',
+        example_subjects: ['Invalid PAN format', 'Invalid mobile number format', 'Due date cannot be future date', 'Outstanding amount must be positive', 'DPD must be non-negative', 'Some records failed validation']
+    },
+    {
+        short_issue: 'AI calling facility access denied',
+        short_resolution_or_hint: 'You do not have tenant-level access to the selected facility for AI calling. Please contact your admin to grant you access to this facility.',
+        example_subjects: ['Facility not found or access denied', 'Tenant access required', 'No access to this facility']
+    },
+    {
+        short_issue: 'AI calling user not found',
+        short_resolution_or_hint: 'Your user account could not be matched in the system. Please ensure your logged-in email address matches a registered user account.',
+        example_subjects: ['User not found', 'Email does not match', 'User account not recognized']
+    },
+    {
+        short_issue: 'AI calling batch processing error',
+        short_resolution_or_hint: 'The lead batch could not be processed or submitted to the AI calling vendor. This could be due to an invalid secret key, missing batch ID, malformed data, or the vendor service being temporarily unavailable. Please try re-uploading or contact support.',
+        example_subjects: ['Secret key required', 'Batch not found', 'Invalid secret key', 'Invalid data format', 'Failed to submit batch call']
+    },
+    {
+        short_issue: 'Individual AI call could not be initiated',
+        short_resolution_or_hint: 'The system could not place an individual AI call. Please ensure a calling configuration exists for the selected facility and that an agent is configured. If everything looks correct, the calling vendor may be temporarily unavailable.',
+        example_subjects: ['No calling configuration found for facility', 'Failed to initiate individual call', 'No agent configured for this facility']
+    },
+    {
+        short_issue: 'AI calling agent details could not be fetched',
+        short_resolution_or_hint: 'The agent configuration details could not be retrieved from the AI calling vendor. Please make sure a facility is selected and that the vendor service is reachable.',
+        example_subjects: ['facility_id is required', 'No agent configured for this facility', 'Failed to fetch agent details']
+    },
+    {
+        short_issue: 'AI calling webhook processing failed',
+        short_resolution_or_hint: 'A post-call webhook or call result could not be processed. This is usually a temporary issue. If call statuses or transcripts are not appearing, please wait a few minutes and refresh. Contact support if the issue persists.',
+        example_subjects: ['Unsupported webhook type', 'Failed to process agent call webhook', 'Failed to process call initiation failure', 'Company ID or Batch ID missing in webhook']
+    },
+    {
+        short_issue: 'AI calling retry could not be triggered',
+        short_resolution_or_hint: 'A scheduled retry call could not be placed because the original call communication record was not found. This may happen if the original call data was deleted or corrupted. Please contact support.',
+        example_subjects: ['Communication not found for retry', 'Retry call failed', 'Original call record missing']
+    },
+
+    // ─────────────────────────────────────────────
+    // ENUMERATION & MASTER DATA MANAGEMENT
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Enumeration not found',
+        short_resolution_or_hint: 'The requested enumeration (dropdown master data) does not exist or the name is incorrect. Please verify the enum name is correct. If you need a new enum to be added, contact your admin.',
+        example_subjects: ['Please check if enum exists', 'Enumeration not found', 'Enum name incorrect']
+    },
+    {
+        short_issue: 'Enum data not provided',
+        short_resolution_or_hint: 'You tried to create or update enumeration values but did not provide the enum data. Please include the list of values when submitting.',
+        example_subjects: ['Please provide enum data', 'Enum values missing', 'Empty enum submission']
+    },
+
+    // ─────────────────────────────────────────────
+    // SYSTEM HEALTH & CONNECTIVITY
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'System health check failed',
+        short_resolution_or_hint: 'The system health check detected an issue — usually the database is temporarily unreachable. If you are experiencing slow performance or errors across the platform, the issue is likely being addressed. Please try again shortly.',
+        example_subjects: ['Health check failed', 'Database unreachable', '502 Bad Gateway', 'System unavailable']
+    },
+    {
+        short_issue: 'External service temporarily unavailable',
+        short_resolution_or_hint: 'An external service (like CKYC, CIBIL, GST verification, Digitap, or a calling vendor) is temporarily not responding. Please wait a few minutes and retry the operation. If the issue persists beyond 30 minutes, contact support.',
+        example_subjects: ['Digitap GST API error', 'Carma API error', 'Server error in calling carma api', 'External API timeout']
+    },
+    {
+        short_issue: 'Background task or async processing failed',
+        short_resolution_or_hint: 'A background process (like batch creation, data sync, or report generation) encountered an error. These tasks are retried automatically in most cases. If the expected result has not appeared after 15-20 minutes, contact support.',
+        example_subjects: ['Error in updating communication records', 'Error processing lead batch', 'Counterparty batch creation failure', 'Async task failed']
+    },
+
+    // ─────────────────────────────────────────────
+    // COVENANT COMPLIANCE BLOCKS
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Operation blocked by covenant compliance',
+        short_resolution_or_hint: 'An LMS operation (like office creation, product creation, or borrower onboarding) is blocked because a pre-agreement or pre-disbursal covenant condition has not been met. Please check if all covenants are fulfilled or if a deferral has been obtained.',
+        example_subjects: ['Covenant condition not met', 'CP Pre-Agreement not fulfilled', 'CP Pre-Disbursal pending', 'Deferral not taken']
+    },
+
+    // ─────────────────────────────────────────────
+    // TOKEN & AUTHENTICATION ISSUES
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Authentication token is missing or invalid',
+        short_resolution_or_hint: 'Your request could not be authenticated because the token is missing, expired, or invalid. Please log out completely, clear your browser cache, and log in again. If you continue to face issues, contact support.',
+        example_subjects: ['User not logged in', 'Token missing', 'Auth info empty', 'Invalid token']
+    },
+    {
+        short_issue: 'Specific action privilege not granted',
+        short_resolution_or_hint: 'Your user account does not have the specific privilege required for this action. Unlike general permissions, this is a fine-grained access check. Please ask your admin to assign the required privilege to your role.',
+        example_subjects: ['Unauthorized access requested', 'Privilege not assigned', 'Action not allowed for your role']
+    },
+
+    // ─────────────────────────────────────────────
+    // CUSTOM FORMS & SCHEMA
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Custom form submission failed',
+        short_resolution_or_hint: 'The custom form could not be submitted because it did not pass validation against the configured schema. Please review all required fields and ensure the data types match (e.g., numbers in number fields, proper date formats).',
+        example_subjects: ['Form validation error', 'Schema validation failed', 'Custom form data invalid']
+    },
+    {
+        short_issue: 'Custom form schema not configured',
+        short_resolution_or_hint: 'No form schema has been configured for this entity or portfolio. The form cannot be displayed without a schema. Please contact your admin to set up the form configuration.',
+        example_subjects: ['Schema not configured', 'No form definition found', 'Form not available for this entity']
+    },
+
+    // ─────────────────────────────────────────────
+    // DATA EXPORT & LARGE OPERATIONS
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Bulk operation partially failed',
+        short_resolution_or_hint: 'Some records in the bulk operation were processed successfully while others failed. Please check the error details for each failed record, fix the issues, and retry only the failed records.',
+        example_subjects: ['Partial batch failure', 'Some records failed', 'Batch processing errors']
+    },
+    {
+        short_issue: 'Data sync between systems failed',
+        short_resolution_or_hint: 'Data synchronization between our platform and an external system (like LMS) failed midway. Some data may have been partially updated. Please do not retry immediately — contact support to verify the current state before retrying.',
+        example_subjects: ['Sync failed', 'Partial data update', 'LMS sync error', 'Data inconsistency']
+    },
+
+    // ─────────────────────────────────────────────
+    // BROWSER & UI ISSUES
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Page is loading slowly or not responding',
+        short_resolution_or_hint: 'If the page is loading slowly or appears frozen, try refreshing the page. Clear your browser cache and cookies if the issue persists. Using the latest version of Chrome or Edge is recommended for best performance.',
+        example_subjects: ['Page not loading', 'Slow performance', 'Screen frozen', 'Spinner not stopping']
+    },
+    {
+        short_issue: 'Button or action is not responding on click',
+        short_resolution_or_hint: 'If a button or action does not respond when clicked, it may be disabled due to a pending prerequisite step, or there may be a validation error that is not visible. Please scroll through the form to check for any error messages, ensure all required fields are filled, and try again.',
+        example_subjects: ['Button not working', 'Submit not responding', 'Action button disabled', 'Nothing happens on click']
+    },
+    {
+        short_issue: 'Data not refreshing or showing stale information',
+        short_resolution_or_hint: 'The data displayed may be cached. Please refresh the page using Ctrl+Shift+R (hard refresh) to load the latest data. If you just performed an action, wait a few seconds for the system to process it before refreshing.',
+        example_subjects: ['Old data showing', 'Status not updated', 'Changes not reflected', 'Stale data displayed']
+    },
+
+    // ─────────────────────────────────────────────
+    // DUPLICATE RECORD ISSUES
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Duplicate record error',
+        short_resolution_or_hint: 'The record could not be created because a similar record already exists (e.g., same PAN, same company, same facility). Please search for the existing record instead of creating a new one. If you believe this is incorrect, contact support.',
+        example_subjects: ['Duplicate PAN', 'Record already exists', 'Company already registered', 'Duplicate entry error']
+    },
+
+    // ─────────────────────────────────────────────
+    // MOBILE / NETWORK ISSUES
+    // ─────────────────────────────────────────────
+    {
+        short_issue: 'Operation failed due to network issues',
+        short_resolution_or_hint: 'The operation could not be completed, possibly due to a weak or interrupted internet connection. Please check your network connection and try again. Avoid switching between Wi-Fi and mobile data during important operations.',
+        example_subjects: ['Network error', 'Request timed out', 'Connection lost', 'Failed to fetch']
+    },
+    {
+        short_issue: 'File download not starting',
+        short_resolution_or_hint: 'The file download may be blocked by your browser or a pop-up blocker. Please allow pop-ups for this site in your browser settings and try again. Also check your Downloads folder in case the file was downloaded but not notified.',
+        example_subjects: ['Download not starting', 'File not downloading', 'Pop-up blocked', 'Download blocked']
     }
 ];
-
-return [{
-    json: {
-        ...item,
-        kb
-    }
-}];
+return kb.map(entry => ({ json: entry }));

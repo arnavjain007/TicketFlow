@@ -5,7 +5,12 @@
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
-        "dev": "nodemon server.js"
+        "dev": "nodemon server.js",
+        "migrate": "node db/migrate.js up",
+        "migrate:down": "node db/migrate.js down",
+        "migrate:status": "node db/migrate.js status",
+        "migrate:redo": "node db/migrate.js redo",
+        "migrate:create": "node db/migrate.js create"
     },
     "keywords": [],
     "author": "",
@@ -22,5 +27,8 @@
     },
     "devDependencies": {
         "nodemon": "^2.0.20"
+    },
+    "engines": {
+        "node": ">=20.0.0"
     }
 }
