@@ -45,15 +45,11 @@ package.json         — Dependencies and scripts
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| **Node.js** | v18+ | Runtime for the server |
-| **MySQL** | 8.x | Conversation memory, tickets, moderation logs |
-| **n8n** | Latest | Runs in Docker; handles LLM workflow |
-| **Docker** & Docker Compose | Latest | For running n8n |
-| **Gemini API Key** | — | Google AI Studio → create API key |
-| (Optional) **ngrok** | — | If you need a public URL for n8n webhooks |
-| (Optional) **Power Automate** | — | For Teams integration |
+- **Node.js** v18+
+- **MySQL** 8.x
+- **n8n** (runs in Docker)
+- **Docker** & Docker Compose
+- (Optional) **ngrok** if you need a public URL for n8n webhooks
 
 ## Setup
 
@@ -99,7 +95,7 @@ PORT=8000
 # Gemini API (used for moderation + ticket intent classification)
 GEMINI_API_KEY=your-gemini-api-key-here
 
-# n8n webhook URL (update after importing the workflow)
+# n8n webhook URL
 N8N_WEBHOOK_URL=http://localhost:5678/webhook/chat-support
 
 # MySQL
@@ -161,7 +157,7 @@ services:
     image: docker.n8n.io/n8nio/n8n
     restart: always
     ports:
-      - "5678:5678"
+      - "5680:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
@@ -181,7 +177,7 @@ docker compose up -d
 
 ### 9. Import the n8n workflow
 
-1. Open n8n at **http://localhost:5678**
+1. Open n8n at `http://localhost:5678`
 2. Go to **Workflows → Import from File**
 3. Import `n8n-workflow.json`
 4. **Configure the Gemini credential** in n8n:
