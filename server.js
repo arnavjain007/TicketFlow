@@ -44,6 +44,7 @@ const teamsThreadMap = {};
 
 const processedTeamsReplies = new Map();
 const moderationQueue = {};   // id -> { id, conversationId, sender, text, teamsMessageId, replyToMessageId, category, ticket_id, originalMessageId, messageId, timestamp, status:'pending' }
+const escalationGateStore = {}; // conversationId -> { botAttempts: number, escalationAllowed: boolean }
 let sendResponseHitCount = 0;
 
 // -------------------- MEMORY CAPS --------------------
@@ -399,6 +400,7 @@ const RUDENESS_PATTERNS = [
 
 // Common words set for gibberish detection (module-level, created once)
 const COMMON_WORDS = new Set([
+    // determiners / pronouns / auxiliaries
     'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
     'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'may', 'might', 'can', 'could',
     'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
@@ -410,6 +412,7 @@ const COMMON_WORDS = new Set([
     'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such',
     'only', 'own', 'same', 'very', 'just', 'also', 'now', 'here', 'there', 'when',
     'where', 'how', 'why', 'too', 'again', 'once', 'please', 'try', 'go', 'get',
+    // common verbs
     'make', 'take', 'come', 'see', 'know', 'think', 'look', 'want', 'give', 'use',
     'find', 'tell', 'ask', 'work', 'call', 'need', 'feel', 'become', 'leave', 'put',
     'mean', 'keep', 'let', 'begin', 'seem', 'help', 'show', 'hear', 'play', 'run',
@@ -420,12 +423,47 @@ const COMMON_WORDS = new Set([
     'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect',
     'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise',
     'pass', 'sell', 'require', 'report', 'decide', 'pull', 'check', 'clear', 'cache',
-    'cookies', 'browser', 'refresh', 'update', 'reset', 'error', 'issue', 'problem',
-    'ticket', 'support', 'team', 'account', 'login', 'password', 'page', 'system',
-    'server', 'status', 'loan', 'payment', 'repayment', 'bank', 'amount', 'balance',
+    'close', 'closed', 'closing', 'assign', 'assigned', 'handle', 'handled',
+    'forward', 'forwarded', 'forwarding', 'transfer', 'transferred',
+    'respond', 'responded', 'responding', 'notify', 'notified',
+    'confirm', 'confirmed', 'confirmation', 'acknowledge', 'acknowledged',
+    'investigate', 'investigating', 'investigation', 'review', 'reviewed', 'reviewing',
+    'process', 'processed', 'processing', 'complete', 'completed', 'completing',
+    'approve', 'approved', 'reject', 'rejected', 'verify', 'verified', 'verifying',
+    'submit', 'submitted', 'submitting', 'receive', 'received',
+    // support / business domain
+    'cookies', 'browser', 'refresh', 'update', 'updated', 'reset', 'error', 'issue', 'issues',
+    'problem', 'problems', 'ticket', 'tickets', 'support', 'team', 'account', 'login',
+    'password', 'page', 'system', 'server', 'status', 'loan', 'loans', 'payment', 'payments',
+    'repayment', 'repayments', 'bank', 'amount', 'balance',
+    'escalation', 'escalated', 'escalate', 'escalating',
+    'resolution', 'resolve', 'resolved', 'resolving',
+    'reply', 'replied', 'response', 'request', 'requested', 'requesting',
+    'fix', 'fixed', 'fixing', 'working', 'still', 'already', 'pending', 'failed', 'done',
+    'correct', 'incorrect', 'wrong', 'right', 'good', 'bad', 'new', 'old', 'newest', 'latest',
+    'looking', 'checking', 'noted', 'please', 'kindly', 'regards',
+    'soon', 'shortly', 'immediately', 'asap', 'urgent', 'priority',
+    'customer', 'user', 'client', 'agent', 'admin', 'manager',
+    'document', 'documents', 'file', 'files', 'upload', 'uploaded', 'download',
+    'access', 'accessed', 'permission', 'permissions', 'role', 'roles',
+    'company', 'facility', 'tranche', 'disbursement', 'kyc', 'ckyc', 'cibil',
+    'pan', 'aadhaar', 'gstin', 'cin', 'otp', 'signatory',
+    'application', 'applied', 'progress', 'step', 'steps', 'stage',
+    'information', 'info', 'detail', 'details', 'data', 'record', 'records',
+    'message', 'messages', 'notification', 'notifications',
+    // greetings / closings / common phrases
     'ok', 'okay', 'sure', 'thanks', 'thank', 'sorry', 'hello', 'hi', 'hey',
-    'resolve', 'fix', 'working', 'still', 'already', 'pending', 'failed', 'done',
-    'correct', 'incorrect', 'wrong', 'right', 'good', 'bad', 'new', 'old'
+    'glad', 'happy', 'great', 'fine', 'nice', 'welcome', 'apologies', 'apologize',
+    'further', 'additional', 'another', 'anything', 'everything', 'something', 'nothing',
+    'able', 'unable', 'available', 'unavailable', 'possible', 'impossible',
+    'today', 'tomorrow', 'yesterday', 'morning', 'evening', 'afternoon',
+    'time', 'date', 'day', 'week', 'month', 'hours', 'minutes',
+    'back', 'next', 'last', 'first', 'second', 'third',
+    'try', 'tried', 'trying', 'test', 'tested', 'testing',
+    'log', 'logged', 'logs', 'screenshot', 'screenshots', 'image', 'images',
+    'link', 'url', 'email', 'mail', 'phone', 'number', 'address',
+    'share', 'shared', 'sharing', 'attach', 'attached', 'attachment',
+    'concern', 'concerns', 'question', 'questions', 'query', 'queries'
 ]);
 
 /**
@@ -468,19 +506,21 @@ function scriptModerate(text) {
     }
 
     // Check for gibberish / nonsensical text
-    const words = lower.replace(/[^a-z\\s]/g, '').split(/\\s+/).filter(w => w.length > 0);
+    // NOTE: use single-escaped \s so regex treats it as whitespace, NOT literal backslash+s
+    const words = lower.replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 0);
 
     if (words.length > 0) {
-        const recognizedCount = words.filter(w => COMMON_WORDS.has(w) || w.length <= 1).length;
+        const recognizedCount = words.filter(w => COMMON_WORDS.has(w) || w.length <= 2).length;
         const recognizedRatio = recognizedCount / words.length;
 
-        // If less than 30% of words are recognized AND message is short-ish, flag as gibberish
-        if (recognizedRatio < 0.3 && words.length <= 15) {
+        // Only flag as gibberish if very few words are recognized AND message is short
+        if (recognizedRatio < 0.25 && words.length <= 10) {
             issues.push('gibberish or nonsensical text');
         }
 
-        // Also flag if single "word" with no spaces and length > 6 that isn't a known word
-        if (words.length === 1 && words[0].length > 6 && !COMMON_WORDS.has(words[0])) {
+        // Single long unrecognized "word" with no spaces — likely keyboard mash
+        // But only if the entire message is one word (after cleaning)
+        if (words.length === 1 && words[0].length > 8 && !COMMON_WORDS.has(words[0])) {
             issues.push('gibberish or nonsensical text');
         }
     }
@@ -513,18 +553,21 @@ async function llmModerate(originalText, issues) {
 A support agent has written a response to a customer. The automated script flagged these issues:
 ${issues.join(', ')}
 
-Original message:
+Original agent message:
 "${originalText}"
 
 Your tasks:
 1. Determine if the core message contains useful information for the customer (e.g. a resolution, update, instruction, or helpful answer).
-2. If useful: rewrite the message to be professional, polite, and helpful. Remove any rude, offensive, or unprofessional language while keeping the useful content intact.
+2. If useful: rewrite the message in THIRD PERSON from the perspective of relaying what the support agent said. The rewritten message should sound like the system is conveying the agent's response, NOT like the AI assistant is personally speaking.
+   - GOOD examples: "The support team has confirmed that the issue has been resolved.", "The support agent has shared the following update: ...", "The team has noted your concern and is looking into it."
+   - BAD examples: "I'm glad to hear the issue has been resolved.", "Great! I'm happy to help.", "I've confirmed that..." — do NOT use first person (I, I'm, I've, we).
+   - Keep the useful content intact. Remove any rude, offensive, or unprofessional language.
 3. If not useful (e.g. just insults, no actual info): mark as not appropriate.
 
 Return ONLY valid JSON:
 {
   "appropriate": true/false,
-  "refined_text": "rewritten professional message" or null if not appropriate,
+  "refined_text": "rewritten third-person relay message" or null if not appropriate,
   "reason": "brief explanation of decision"
 }`;
 
@@ -554,6 +597,496 @@ Return ONLY valid JSON:
         console.error('❌ LLM moderation error:', err.message);
         return { appropriate: false, refinedText: null, reason: `LLM error: ${err.message}` };
     }
+}
+
+/**
+ * LLM-based intent classifier for ticket follow-up messages.
+ * Uses Gemini to classify user messages into intents when regex is uncertain.
+ * Returns one of: 'positive', 'negative', 'casual_ack', 'substantive'
+ *   - positive: user confirms issue is resolved (yes, yep, yers, yaa, etc.)
+ *   - negative: user says no / not resolved, but gives NO details
+ *   - casual_ack: just acknowledging (okay, okie, cool, alright, sure, etc.)
+ *   - substantive: user provides actual follow-up details or a new issue description
+ */
+async function classifyTicketIntent(text, context = 'resolution_check') {
+    const normalized = text.trim().toLowerCase();
+
+    // ── Fast-path regex (covers clean/obvious cases) ──
+    if (context === 'resolution_check') {
+        if (/^(yes|yeah|yep|yup|ya|yaa+|resolved|done|fixed|it('?s)?\s*(working|fixed|resolved|good)|all\s*(good|set)|that\s*(works|worked|helped|fixed)|no\s*more\s*issues?|looks?\s*good)\s*[.!]*$/i.test(normalized)) return 'positive';
+        if (/^(no+|nope|nah|na+h?|not?\s*really|negative|nuh[\s-]?uh)\s*[.!]*$/i.test(normalized)) return 'negative';
+    }
+    if (context === 'followup_details') {
+        if (/^(no+|nope|nah|na+h?|not?\s*really|negative|nuh[\s-]?uh)\s*[.!]*$/i.test(normalized)) return 'negative';
+    }
+    if (context === 'waiting_for_agent') {
+        const stripped = normalized.replace(/\b(baby|babe|babes|bby|bb|boo|dear|hun|honey|love|dude|bro|man|mate|fam|buddy|pal|thanks|thank\s*you|thankyou|thx|ty)\b/gi, '').trim();
+        if (/^(ok(ay)?|okie+|okk+|k+|sure|alright|all\s*right|cool|got\s*it|noted|right|hmm+|oh+|ah+|i\s*see|understood|no\s*worries|no\s*problem|np|sounds?\s*good|fair\s*enough|great|fine|bet|aight|ight|roger|copy)\s*[.!,]*$/i.test(stripped)) return 'casual_ack';
+        if (stripped.length === 0) return 'casual_ack'; // entire message was pet names / thanks
+
+        // Clarification / bot-reference — user talking about what the bot said
+        if (/\b(wdym|what\s*(do|did|does)\s*(you|u|that|it|this)\s*mean|what\s*(are|r)\s*(you|u)\s*(saying|talking)|what\s*does\s*that\s*mean|what\s*(is|does)\s*that\s*(supposed\s*to\s*)?mean|i\s*don'?t\s*(understand|get\s*it)|explain\s*(that|this|what)|clarify|huh\??|makes?\s*no\s*sense|doesn'?t\s*make\s*sense)\b/i.test(normalized) ||
+            /^(what|huh|wdym)\s*\??$/i.test(normalized) ||
+            /\b(you|u)\s*(said|wrote|told|mentioned|typed|stated|just\s*said|literally\s*(said|wrote))\b/i.test(normalized) ||
+            /\b(you\s*)?definitely\s*(said|wrote|told|mentioned|typed)\b/i.test(normalized) ||
+            /\b(no+\s*)?you\s*(did|didn'?t)\s*(not\s*)?(say|write|mention|tell)\b/i.test(normalized) ||
+            /\b(but\s*)?you\s*(just|literally|clearly)\s*(said|wrote|told)\b/i.test(normalized) ||
+            /\bwhat\s*(did\s*)?you\s*(just\s*)?(say|write|mean|tell)\b/i.test(normalized) ||
+            /\bi\s*(can\s*)?read\s*(what\s*)?(you|it)\s*(said|wrote)\b/i.test(normalized)) {
+            return 'clarification';
+        }
+
+        // Ticket status inquiries
+        if (/\b(ticket|issue|status|update|progress|eta|when|how\s*long|any\s*(update|news|response|reply)|where\s*(is|are)|what('?s|\s+is)\s*(the|my)?\s*(status|update|progress|ticket))\b/i.test(normalized) &&
+            !/\b(new|different|another|also|additionally|separate)\b/i.test(normalized)) {
+            return 'status_inquiry';
+        }
+
+        // Off-topic / casual conversation (not about support issues)
+        if (/^(how\s*(are|r)\s*(you|u|ya)|how('?re|\s*re)\s*(you|u|ya)|what('?re|\s*re)\s*(you|u|ya)\s*(doing|up\s*to)|what\s*(are|r)\s*(you|u|ya)\s*(doing|up\s*to)|what('?s|\s+is)\s*up|sup|wyd|hyd|how\s*do\s*you\s*do|what\s*do\s*you\s*do|who\s*(are|r)\s*(you|u)|tell\s*me\s*(about|a)\s*(yourself|joke|story)|how('?s|\s+is)\s*(it\s*going|life|your\s*day|everything)|good\s*(morning|afternoon|evening|night)|whats?\s*good)\s*[?!.]*$/i.test(normalized)) {
+            return 'off_topic';
+        }
+    }
+
+    // ── LLM fallback for ambiguous messages ──
+    if (!GEMINI_API_KEY) {
+        console.warn('⚠️ GEMINI_API_KEY not set — falling back to substantive for ambiguous message');
+        return 'substantive';
+    }
+
+    const contextDescriptions = {
+        resolution_check: 'The user was asked "Did the support team\'s response resolve your issue?" Classify their reply.',
+        followup_details: 'The user said their issue wasn\'t resolved and was asked to describe what\'s still wrong. Classify their reply.',
+        waiting_for_agent: 'The user has an open support ticket and the team is working on it. Classify whether this message is just a casual acknowledgment or an actual follow-up with details.'
+    };
+
+    const prompt = `You are a customer support chat intent classifier.
+
+Context: ${contextDescriptions[context] || contextDescriptions.resolution_check}
+
+User message: "${text}"
+
+Classify this message into EXACTLY one of these intents:
+- "positive": The user is confirming the issue is resolved, or expressing agreement that things are working. Includes typos of yes (e.g. "yers", "yess", "yeh", "ys"), or affirmative slang.
+- "negative": The user is saying no / not resolved, but NOT providing any specific details about what's wrong. Just a bare refusal.
+- "casual_ack": The user is just casually acknowledging (e.g. "okay", "okie", "cool", "alright", "sure", "kk", "bet"). They aren't reporting an issue or confirming resolution — just responding conversationally. Includes slang, pet names, elongated words like "okieeeee", "okkk", abbreviations like "bby", "bro".
+- "status_inquiry": The user is asking about their ticket status, waiting time, progress, or any update on their existing ticket. Examples: "whats my ticket status", "any update", "how long will it take", "when will they reply", "is there any progress".
+- "off_topic": The user is making casual conversation unrelated to their support issue — small talk, personal questions to the bot, jokes, etc. Examples: "howre you", "whatre you doing", "whats up", "tell me a joke", "who are you", "good morning".
+- "clarification": The user is asking about, referring to, disagreeing with, or quoting something the bot previously said. They are talking TO the bot about the bot's own words — NOT reporting a support issue. Examples: "wdym by 2 minutes", "you said 30 minutes", "you definitely wrote that", "what did you mean", "no you told me X", "you literally just said", "i dont understand what you said", "explain that", "you wrote X".
+- "substantive": The user is providing actual details about their issue, describing a NEW or DIFFERENT problem, asking a specific support-related question, or giving meaningful follow-up information that should be forwarded to the support team.
+
+IMPORTANT:
+- Only classify as "substantive" if the message contains actual issue details, a new problem description, or specific support-related information.
+- If the user is talking about what the BOT said/wrote/mentioned, classify as "clarification" NOT "substantive".
+- Do NOT classify casual conversation, greetings, status checks, clarification requests, or off-topic chat as substantive.
+
+Return ONLY valid JSON: {"intent": "positive"|"negative"|"casual_ack"|"status_inquiry"|"off_topic"|"clarification"|"substantive"}`;
+
+    try {
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.0, maxOutputTokens: 64 }
+            },
+            { timeout: 8000 }
+        );
+
+        const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        const result = JSON.parse(cleaned);
+        const intent = result.intent;
+        console.log(`🤖 LLM intent classification: "${text}" → ${intent} (context: ${context})`);
+
+        if (['positive', 'negative', 'casual_ack', 'status_inquiry', 'off_topic', 'clarification', 'substantive'].includes(intent)) return intent;
+        return 'substantive'; // default fallback
+    } catch (err) {
+        console.error('❌ LLM intent classification error:', err.message);
+        return 'substantive'; // safe default
+    }
+}
+
+// -------------------- LOCAL INTENT PRE-CLASSIFIER (NO LLM) --------------------
+
+/**
+ * Regex-based pre-classifier for non-support messages.
+ * Returns { matched: true, category, response } if intercepted, or { matched: false } to continue to n8n.
+ */
+function classifyLocalIntent(text) {
+    if (!text || typeof text !== 'string') return { matched: false };
+
+    const raw = text.toLowerCase().trim().replace(/[^a-z0-9\s']/g, '').replace(/\s+/g, ' ');
+    // Collapse runs of 3+ identical chars → 2 (e.g. "hiiiii" → "hii")
+    const msg = raw.replace(/(.)\1{2,}/g, '$1$1');
+
+    // ── 1. GREETINGS ──
+    const greetingPatterns = [
+        /^h+e+l+o+$/, /^h+e+l+l+o+$/, /^h+i+$/, /^h+i+e*$/, /^h+e+y+$/,
+        /^h+i+y+a*$/, /^y+o+$/, /^s+u+p+$/, /^h+o+w+d+y+$/,
+        /^good\s*(morning|evening|afternoon|night|day)$/,
+        /^(gm|gn|ge)$/, /^whats\s*up$/, /^wassup$/, /^wazzup$/,
+        /^hola$/, /^greetings$/, /^namaste$/
+    ];
+    for (const p of greetingPatterns) {
+        if (p.test(msg)) {
+            return { matched: true, category: 'greeting', response: 'Hello! How can I help you today?' };
+        }
+    }
+
+    // ── 2. THANKS ──
+    if (/^(thanks|thankyou|thank\s*you|thx|ty|tysm|thanx|thank\s*u|thnx)\s*[.!]*$/.test(msg)) {
+        return { matched: true, category: 'thanks', response: "You're welcome! Let me know if you need anything else." };
+    }
+
+    // ── 3. GOODBYE ──
+    if (/^(bye|goodbye|good\s*bye|see\s*you|see\s*ya|later|cya|ttyl|take\s*care)\s*[.!]*$/.test(msg)) {
+        return { matched: true, category: 'goodbye', response: 'Goodbye! Feel free to reach out anytime.' };
+    }
+
+    // ── 4. SIMPLE ACKNOWLEDGMENTS ──
+    if (/^(ok|okay|okk+|k+|kk+|cool|nice|great|awesome|perfect|alright|aight|got\s*it|noted|sure|fine|np|no\s*problem|no\s*worries)\s*[.!]*$/.test(msg)) {
+        return { matched: true, category: 'acknowledgment', response: 'Alright! Let me know if there is anything else I can help with.' };
+    }
+
+    // ── 5. PERSONAL INTRODUCTIONS ──
+    if (/^(my\s*name\s*is|im|i\s*am|this\s*is)\s+[a-z]+$/.test(msg) ||
+        /^(im|i\s*am)\s+from\s+[a-z]+$/.test(msg)) {
+        return { matched: true, category: 'introduction', response: 'Nice to meet you! How can I help you today?' };
+    }
+
+    // ── 6. BOT CAPABILITY QUESTIONS ──
+    const capabilityPatterns = [
+        /^what\s*(all\s*)?(can|do) you do$/,
+        /^what\s*are\s*your\s*(capabilities|features|functions|skills)$/,
+        /^what\s*are\s*you(\s*capable\s*of)?$/,
+        /^who\s*are\s*you$/,
+        /^are\s*you\s*(a\s*)?(bot|ai|human|real|chatbot|robot)$/,
+        /^what\s*is\s*(this|this\s*chat|this\s*bot)(\s*for)?$/,
+        /^how\s*(can|do)\s*you\s*help(\s*me)?$/,
+        /^what\s*(services?|features?|help|things?)\s*(do|can)\s*you\s*(offer|provide|give|do)$/,
+        /^what\s*kind\s*of\s*(help|support|issues?|problems?)\s*(can|do)\s*you\s*(help|handle|solve|support|assist)(\s*with)?$/,
+        /^how\s*does\s*this\s*(work|bot\s*work|chat\s*work)$/,
+        /^what\s*do\s*you\s*support$/,
+        /^tell\s*me\s*(about\s*)?(yourself|what\s*you\s*do|your\s*capabilities)$/
+    ];
+    for (const p of capabilityPatterns) {
+        if (p.test(msg)) {
+            return {
+                matched: true,
+                category: 'bot_capability',
+                response: 'I am a support assistant for the StrideOne lending and loan management platform. I can help you with:\n\n• Loan queries and application status\n• Repayment issues and payment failures\n• Account access and login problems\n• KYC and verification issues\n• Facility and disbursement problems\n• Document upload assistance\n• Error code troubleshooting\n\nPlease describe the issue you\'re facing and I\'ll do my best to assist you!'
+            };
+        }
+    }
+
+    // ── 7. NO-ISSUE / JUST BROWSING ──
+    const noIssuePatterns = [
+        /^i\s*don'?t\s*have\s*(a\s*|any\s*)?(issue|problem|error|complaint|question)s?$/,
+        /^(i\s*don'?t\s*need\s*(any\s*)?help|no\s*help\s*needed)$/,
+        /^(nothing|nope|no)\s*(i\s*)?(just\s*)?(wanted\s*to\s*talk|browsing|looking\s*around|checking)$/,
+        /^i'?m?\s*just\s*(browsing|looking|checking|exploring|testing)$/,
+        /^(i\s*don'?t\s*want\s*to\s*raise\s*(a\s*)?ticket)$/,
+        /^(no\s*issues?|no\s*problems?|everything\s*(is\s*)?(fine|good|ok|okay|working))$/,
+        /^what\s*if\s*i\s*don'?t\s*(want|need)\s*(any\s*)?(service|help|support)$/,
+        /^i\s*don'?t\s*(want|need)\s*(any\s*)?(service|help|support|assistance)$/
+    ];
+    for (const p of noIssuePatterns) {
+        if (p.test(msg)) {
+            return {
+                matched: true,
+                category: 'no_issue',
+                response: "No problem at all! If you ever run into any issues with the platform, feel free to come back and I'll be happy to help. Have a great day!"
+            };
+        }
+    }
+
+    // ── 8. OFF-TOPIC / CHITCHAT ──
+    const offTopicPatterns = [
+        /^(tell\s*me\s*a\s*joke|make\s*me\s*laugh)$/,
+        /^what\s*is\s*the\s*meaning\s*of\s*life$/,
+        /^(whats|what\s*is)\s*your\s*(name|age)$/,
+        /^how\s*old\s*are\s*you$/,
+        /^(can\s*we\s*be\s*friends|be\s*my\s*friend)$/,
+        /^what\s*is\s*\d+\s*[\+\-\*\/x]\s*\d+$/,
+        /^(do\s*you\s*have\s*feelings|are\s*you\s*alive|are\s*you\s*real)$/,
+        /^(sing\s*(me\s*)?a\s*song|tell\s*me\s*a\s*story)$/,
+        /^(who\s*made\s*you|who\s*created\s*you|who\s*built\s*you)$/,
+        /^(whats\s*the\s*weather|hows\s*the\s*weather)$/,
+        /^(i\s*love\s*you|do\s*you\s*love\s*me|i\s*like\s*you)$/,
+        /^(lets\s*just\s*chat|lets\s*talk|can\s*you\s*chat)$/,
+        /^(whos\s*the\s*president|what\s*year\s*is\s*it)$/,
+        /^(play\s*a\s*game|lets\s*play)$/
+    ];
+    for (const p of offTopicPatterns) {
+        if (p.test(msg)) {
+            return {
+                matched: true,
+                category: 'off_topic',
+                response: "That's a fun question, but I'm designed specifically to help with support issues on the StrideOne platform. If you have any technical issues, loan queries, or account problems, I'm here to help!"
+            };
+        }
+    }
+
+    // ── 9. GIBBERISH (random chars, keyboard mash) ──
+    const stripped = msg.replace(/[^a-z0-9]/g, '');
+    const words = msg.split(/\s+/).filter(Boolean);
+
+    // All special chars / empty after stripping
+    if (stripped.length === 0 && text.trim().length > 0) {
+        return { matched: true, category: 'gibberish', response: "I couldn't understand that. Could you please rephrase your message? I'm here to help with any platform-related issues." };
+    }
+    // Keyboard mash (e.g. "asdfghjkl", "qwerty", repeated chars)
+    if (stripped.length > 2 && /^([a-z])\1{2,}$|^[^aeiou]{5,}$|^(.{1,2})\2{2,}$/i.test(stripped)) {
+        return { matched: true, category: 'gibberish', response: "I couldn't understand that. Could you please rephrase your message? I'm here to help with any platform-related issues." };
+    }
+    // Single unknown long word
+    if (words.length === 1 && stripped.length > 6 && !COMMON_WORDS.has(stripped)) {
+        return { matched: true, category: 'gibberish', response: "I couldn't understand that. Could you please rephrase your message? I'm here to help with any platform-related issues." };
+    }
+
+    // ── 10. UNCLEAR / VAGUE (very short fragments) ──
+    const unclearExact = new Set([
+        'help', 'issue', 'problem', 'check this', 'its not', 'i cant',
+        'where is', 'what about', 'i need', 'how do i', 'is there',
+        'my thing', 'the thing', 'i want to', 'please do'
+    ]);
+    if (unclearExact.has(msg)) {
+        return {
+            matched: true,
+            category: 'unclear',
+            response: "Could you please provide a bit more detail about what you need help with? For example, you can describe the error you're seeing, the page you're on, or the action you were trying to perform."
+        };
+    }
+
+    // Not intercepted — let n8n handle
+    return { matched: false };
+}
+
+// -------------------- ESCALATION GATE (min 2 bot attempts) --------------------
+
+const MIN_BOT_ATTEMPTS_BEFORE_ESCALATION = 2;
+
+/**
+ * Check if the user message is a support/escalation request.
+ */
+function isEscalationRequest(text) {
+    if (!text) return false;
+    const msg = text.toLowerCase().trim().replace(/[^a-z0-9\s']/g, '').replace(/\s+/g, ' ');
+    const patterns = [
+        /\bcontact\s*support\b/,
+        /\bconnect\s*(me\s*)?to\s*support\b/,
+        /\bhuman\s*(support|agent)\b/,
+        /\btalk\s*to\s*(support|agent|human|someone|a\s*person)\b/,
+        /\brepresentative\b/,
+        /\breal\s*person\b/,
+        /\bcustomer\s*care\b/,
+        /\bescalate\b/,
+        /\braise\s*(a\s*)?ticket\b/,
+        /\bcreate\s*(a\s*)?ticket\b/,
+        /\bi\s*(want|need)\s*(a\s*)?ticket\b/,
+        /\bfollow\s*up\s*(on\s*)?(my\s*)?(ticket|issue)\b/,
+        /\braise\s*this\s*again\b/,
+        /\bask\s*the\s*support\s*team\b/,
+        /\bcheck\s*with\s*(the\s*)?support\b/,
+        /\bi\s*(want|need)\s*to\s*contact\s*support\b/,
+        /\bi\s*(want|need)\s*support\b/,
+        /\bplease\s*(connect|contact|reach|escalate|follow)\b/
+    ];
+    return patterns.some(p => p.test(msg));
+}
+
+/**
+ * Count how many substantive bot resolution attempts have been made for a conversation.
+ * Counts assistant messages that are actual issue resolutions (not greetings, acks, escalation prompts, etc.)
+ */
+function countBotAttempts(conversationId) {
+    const msgs = conversationMessagesStore[conversationId] || [];
+    const nonResolutionCategories = new Set([
+        'greeting', 'greeting_or_ack', 'thanks', 'goodbye', 'acknowledgment',
+        'introduction', 'bot_capability', 'no_issue', 'off_topic', 'gibberish',
+        'unclear', 'support_request_pending_details', 'escalation_gate',
+        'followup_support', 'casual_ack', 'resolution_check',
+        'followup_details_request', 'ticket_resolved', 'clarification',
+        'status_inquiry'
+    ]);
+    let count = 0;
+    for (const msg of msgs) {
+        if (msg.role === 'assistant' && msg.message_text) {
+            const cat = (msg.matched_issue || msg.category || '').toLowerCase();
+            if (!nonResolutionCategories.has(cat) && msg.message_text.length > 30) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+/**
+ * Check if escalation should be gated. Returns:
+ * - { gated: false } if user can escalate
+ * - { gated: true, response: string, attemptsNeeded: number } if user should try bot first
+ */
+function checkEscalationGate(conversationId) {
+    if (!conversationId) return { gated: false };
+
+    const botAttempts = countBotAttempts(conversationId);
+    const remaining = MIN_BOT_ATTEMPTS_BEFORE_ESCALATION - botAttempts;
+
+    if (remaining <= 0) {
+        return { gated: false };
+    }
+
+    // Craft response based on how many more attempts are needed
+    let response;
+    if (botAttempts === 0) {
+        response = "I'd like to try helping you first before creating a support ticket. Could you please describe the issue you're facing? I might be able to resolve it right away.";
+    } else {
+        response = "I understand you'd like to reach support, but let me try one more thing first. Could you describe what's still not working? If I'm unable to help, I'll connect you with the support team right away.";
+    }
+
+    return {
+        gated: true,
+        response,
+        botAttempts,
+        attemptsNeeded: remaining
+    };
+}
+
+/**
+ * Generate a context-aware clarification response for the active ticket conversation.
+ * Uses LLM with recent conversation history, with a regex-based fallback.
+ */
+async function generateClarificationResponse(conversationId, userText, activeTicket) {
+    const recentMsgs = (conversationMessagesStore[conversationId] || []).slice(-8);
+    const contextLines = recentMsgs.map(m =>
+        `${m.role === 'user' ? 'User' : 'Bot'}: ${m.message_text}`
+    ).join('\n');
+
+    if (GEMINI_API_KEY) {
+        try {
+            const clarifyPrompt = `You are a helpful customer support chatbot. The user is responding to or asking about something you (the bot) previously said in the conversation. They may be asking for clarification, disagreeing with what you said, quoting you, or pointing out something you wrote.
+
+Recent conversation:
+${contextLines}
+
+User's latest message: "${userText}"
+
+The user has an open support ticket (${activeTicket.id}). They are waiting for the support team to respond.
+
+Respond naturally and helpfully:
+- Look at YOUR (the bot's) previous messages and figure out what the user is referring to.
+- If the user says "you said X" or "you wrote X," acknowledge it and explain what you meant.
+- If the user is confused about a time reference (like "X minutes in" or "X hours"), explain it refers to how long the ticket has been open.
+- If the user is disagreeing or insisting you said something, review your actual messages and either confirm or correct yourself honestly.
+- Keep it concise, friendly, and clear (1-2 sentences max).
+- Do NOT ask the user to describe their issue again.
+- Do NOT say "Your follow-up has been shared with support" — they are talking to YOU about YOUR words.
+- Do NOT be defensive. Just clarify simply.`;
+
+            const resp = await axios.post(
+                `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+                {
+                    contents: [{ parts: [{ text: clarifyPrompt }] }],
+                    generationConfig: { temperature: 0.3, maxOutputTokens: 150 }
+                },
+                { timeout: 8000 }
+            );
+            const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) return text;
+        } catch (err) {
+            console.error('❌ Clarification LLM error:', err.message);
+        }
+    }
+
+    // Fallback
+    const lastBotMsg = recentMsgs.filter(m => m.role === 'assistant').pop();
+    if (lastBotMsg && /\d+\s*(minute|hour|min)/i.test(lastBotMsg.message_text)) {
+        return `When I mentioned the time, I was referring to how long your support ticket (${activeTicket.id}) has been open. The support team is still working on it — nothing to worry about!`;
+    }
+    return `I was providing an update on your support ticket (${activeTicket.id}). The support team is still working on your issue and I'll notify you as soon as they respond.`;
+}
+
+/**
+ * Emit a locally-generated response to the chat (bypassing n8n).
+ * Stores in memory, emits via socket, saves to DB.
+ */
+function emitLocalResponse({ io, messageData, responseText, category, conversationId }) {
+    const responseMessage = {
+        type: 'response',
+        sender: 'AI Assistant',
+        timestamp: new Date().toISOString(),
+        text: responseText,
+        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        originalMessageId: messageData.messageId,
+        category,
+        conversationId
+    };
+
+    messages.push(responseMessage);
+
+    if (!conversationMessagesStore[conversationId]) {
+        conversationMessagesStore[conversationId] = [];
+    }
+    conversationMessagesStore[conversationId].push({
+        role: 'assistant',
+        message_text: responseText,
+        assistant_message: responseText,
+        matched_issue: category,
+        messageId: responseMessage.messageId,
+        created_at: responseMessage.timestamp
+    });
+
+    updateChatSummary(conversationId, {
+        user_message: messageData.text,
+        assistant_message: responseText,
+        matched_issue: category
+    });
+    updateConversation(conversationId, { preview: responseText });
+
+    io.to(conversationId).emit('responseMessage', responseMessage);
+
+    // Persist to DB
+    db.saveChatMessage({
+        conversationId,
+        messageId: responseMessage.messageId,
+        role: 'assistant',
+        messageText: responseText,
+        intent: category,
+        matchedIssue: category,
+        issueSummary: null,
+        attachmentSummary: null,
+        ticketId: null,
+        fileUrl: null,
+        fileType: null,
+        fileName: null,
+        createdAt: responseMessage.timestamp
+    });
+
+    // Also save the user turn to chat-memory
+    if (!chatMemoryStore[conversationId]) {
+        chatMemoryStore[conversationId] = [];
+    }
+    chatMemoryStore[conversationId].push({
+        role: 'user',
+        message_text: messageData.text,
+        user_message: messageData.text,
+        user_query: messageData.text,
+        intent: category,
+        matched_issue: category,
+        created_at: messageData.timestamp
+    });
+    chatMemoryStore[conversationId].push({
+        role: 'assistant',
+        message_text: responseText,
+        assistant_message: responseText,
+        intent: category,
+        matched_issue: category,
+        created_at: responseMessage.timestamp
+    });
+
+    console.log(`🏠 Local response [${category}]: "${messageData.text}" → "${responseText.substring(0, 60)}..."`);
+
+    return responseMessage;
 }
 
 /**
@@ -648,6 +1181,52 @@ async function sendFollowupToTeams(ticket, messageData) {
     } catch (err) {
         console.error(`❌ Failed to send follow-up Teams notification for ticket ${ticket.id}:`, err.message);
     }
+}
+
+/**
+ * Save follow-up ticket data — merges description, updates status, records follow-up history.
+ * This mirrors the logic from the /api/tickets/followup endpoint.
+ */
+function saveFollowupTicket(ticket, latestUserMessage, conversationId) {
+    if (!ticket) return;
+
+    const oldDescription = ticket.description || '';
+    const newDescription = [
+        oldDescription ? `Previous Ticket Description: ${oldDescription}` : '',
+        latestUserMessage ? `Latest User Follow-Up: ${latestUserMessage}` : ''
+    ].filter(Boolean).join('\n\n');
+
+    ticket.previous_ticket_description = oldDescription;
+    ticket.latest_user_message = latestUserMessage || '';
+    ticket.description = newDescription;
+    ticket.category = 'followup_support';
+    ticket.conversationId = conversationId || ticket.conversationId || null;
+
+    // Reopen ticket if resolved
+    if (ticket.status === 'resolved') {
+        console.log(`🔓 Reopening resolved ticket ${ticket.id} for follow-up`);
+        ticket.resolved_at = null;
+    }
+
+    // Set follow-up status (preserve escalated)
+    if (ticket.status !== 'escalated') {
+        ticket.status = 'existing_ticket_followup';
+    }
+
+    ticket.updated_at = new Date().toISOString();
+    ticket.last_response_at = new Date().toISOString();
+
+    if (!ticket.followups) ticket.followups = [];
+    ticket.followups.push({
+        message: latestUserMessage || '',
+        created_at: new Date().toISOString()
+    });
+    if (ticket.followups.length > 20) {
+        ticket.followups = ticket.followups.slice(-20);
+    }
+
+    db.saveTicket(ticket);
+    console.log(`📋 Follow-up ticket saved: ${ticket.id} (status: ${ticket.status})`);
 }
 
 /**
@@ -1107,7 +1686,45 @@ app.post('/api/messages', async (req, res) => {
         });
 
         io.emit('newMessage', messageData);
-        await sendToN8n(messageData);
+
+        // ========== LOCAL PRE-CLASSIFIER (no LLM) ==========
+        let locallyHandled = false;
+        if (messageData.text && !messageData.file_url) {
+            // --- Escalation gate: intercept support requests before min attempts ---
+            if (isEscalationRequest(messageData.text)) {
+                const gate = checkEscalationGate(finalConversationId);
+                if (gate.gated) {
+                    emitLocalResponse({
+                        io,
+                        messageData,
+                        responseText: gate.response,
+                        category: 'escalation_gate',
+                        conversationId: finalConversationId
+                    });
+                    locallyHandled = true;
+                    console.log(`🚧 Escalation gated for ${finalConversationId}: ${gate.botAttempts}/${MIN_BOT_ATTEMPTS_BEFORE_ESCALATION} attempts`);
+                }
+            }
+
+            if (!locallyHandled) {
+                const localIntent = classifyLocalIntent(messageData.text);
+                if (localIntent.matched) {
+                    emitLocalResponse({
+                        io,
+                        messageData,
+                        responseText: localIntent.response,
+                        category: localIntent.category,
+                        conversationId: finalConversationId
+                    });
+                    locallyHandled = true;
+                }
+            }
+        }
+        // ========== END LOCAL PRE-CLASSIFIER ==========
+
+        if (!locallyHandled) {
+            await sendToN8n(messageData);
+        }
 
         res.json({
             success: true,
@@ -1178,10 +1795,10 @@ io.on('connection', (socket) => {
                 // ---- STATE: awaiting_resolution_confirmation ----
                 // The user was asked "Did this resolve your issue?" — check their answer
                 if (activeTicket.status === 'awaiting_resolution_confirmation') {
-                    const normalized = messageData.text.trim().toLowerCase();
-                    const isPositive = /^(yes|yeah|yep|yup|ya|yaa+|resolved|done|fixed|it('?s)?\s*(working|fixed|resolved|good)|all\s*(good|set)|that\s*(works|worked|helped|fixed)|no\s*more\s*issues?|looks?\s*good)\s*[.!]*$/i.test(normalized);
+                    const resolutionIntent = await classifyTicketIntent(messageData.text, 'resolution_check');
+                    console.log(`🔍 Resolution intent for "${messageData.text}": ${resolutionIntent}`);
 
-                    if (isPositive) {
+                    if (resolutionIntent === 'positive') {
                         closeTicket(activeTicket.id);
 
                         const ackText = "Glad I could help! Your ticket has been resolved. Feel free to reach out if you need anything else.";
@@ -1217,12 +1834,38 @@ io.on('connection', (socket) => {
                         return;
                     }
 
-                    // User said no or described further issue → forward to Teams as follow-up
-                    activeTicket.latest_user_message = messageData.text;
-                    activeTicket.updated_at = new Date().toISOString();
-                    if (!activeTicket.followups) activeTicket.followups = [];
-                    activeTicket.followups.push({ message: messageData.text, created_at: new Date().toISOString() });
-                    if (activeTicket.followups.length > 20) activeTicket.followups = activeTicket.followups.slice(-20);
+                    if (resolutionIntent === 'negative') {
+                        // Ask user to elaborate before forwarding to support
+                        activeTicket.status = 'awaiting_followup_details';
+                        activeTicket.updated_at = new Date().toISOString();
+                        db.saveTicket(activeTicket);
+
+                        const detailsText = "Could you please describe what's still not working or what issue you're facing? This will help the support team assist you better.";
+                        const detailsMsg = {
+                            type: 'response',
+                            sender: 'AI Assistant',
+                            timestamp: new Date().toISOString(),
+                            text: detailsText,
+                            messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                            originalMessageId: messageData.messageId,
+                            category: 'followup_details_request',
+                            conversationId: messageData.conversationId,
+                            ticket_id: activeTicket.id
+                        };
+
+                        messages.push(detailsMsg);
+                        conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: detailsText, assistant_message: detailsText, matched_issue: 'followup_details_request', ticket_id: activeTicket.id, messageId: detailsMsg.messageId, created_at: detailsMsg.timestamp });
+                        updateChatSummary(messageData.conversationId, { assistant_message: detailsText, matched_issue: 'followup_details_request', ticket_id: activeTicket.id });
+                        updateConversation(messageData.conversationId, { preview: detailsText });
+                        io.to(messageData.conversationId).emit('responseMessage', detailsMsg);
+                        db.saveChatMessage({ conversationId: messageData.conversationId, messageId: detailsMsg.messageId, role: 'assistant', messageText: detailsText, intent: null, matchedIssue: 'followup_details_request', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: detailsMsg.timestamp });
+
+                        console.log(`❓ User said "${messageData.text}" without details — asking for elaboration on ticket ${activeTicket.id}`);
+                        return;
+                    }
+
+                    // resolutionIntent === 'substantive' or 'casual_ack' with actual content → forward to Teams as follow-up
+                    saveFollowupTicket(activeTicket, messageData.text, messageData.conversationId);
                     activeTicket.status = 'awaiting_agent_reply';
                     db.saveTicket(activeTicket);
 
@@ -1248,6 +1891,76 @@ io.on('connection', (socket) => {
                     updateConversation(messageData.conversationId, { preview: followUpText });
                     io.to(messageData.conversationId).emit('responseMessage', followUpMsg);
                     db.saveChatMessage({ conversationId: messageData.conversationId, messageId: followUpMsg.messageId, role: 'assistant', messageText: followUpText, intent: null, matchedIssue: 'followup_support', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: followUpMsg.timestamp });
+
+                    return;
+                }
+
+                // ---- STATE: awaiting_followup_details ----
+                // User said "no" without explanation; we asked them to elaborate.
+                if (activeTicket.status === 'awaiting_followup_details') {
+                    const detailIntent = await classifyTicketIntent(messageData.text, 'followup_details');
+                    console.log(`🔍 Detail intent for "${messageData.text}": ${detailIntent}`);
+
+                    if (detailIntent === 'negative') {
+                        // User refuses to elaborate — escalate to Teams noting no details were given
+                        const noDetailMessage = '(User indicated issue is not resolved but did not provide details)';
+                        saveFollowupTicket(activeTicket, noDetailMessage, messageData.conversationId);
+                        activeTicket.status = 'awaiting_agent_reply';
+                        db.saveTicket(activeTicket);
+
+                        await sendFollowupToTeams(activeTicket, messageData);
+                        console.log(`📤 User declined to elaborate — escalated ticket ${activeTicket.id} to Teams with note`);
+
+                        const noDetailText = "No problem — I've let the support team know that the issue isn't resolved yet. They'll reach out to you for more details shortly.";
+                        const noDetailMsg = {
+                            type: 'response',
+                            sender: 'AI Assistant',
+                            timestamp: new Date().toISOString(),
+                            text: noDetailText,
+                            messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                            originalMessageId: messageData.messageId,
+                            category: 'followup_support',
+                            conversationId: messageData.conversationId,
+                            ticket_id: activeTicket.id
+                        };
+
+                        messages.push(noDetailMsg);
+                        conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: noDetailText, assistant_message: noDetailText, matched_issue: 'followup_support', ticket_id: activeTicket.id, messageId: noDetailMsg.messageId, created_at: noDetailMsg.timestamp });
+                        updateChatSummary(messageData.conversationId, { assistant_message: noDetailText, matched_issue: 'followup_support', ticket_id: activeTicket.id });
+                        updateConversation(messageData.conversationId, { preview: noDetailText });
+                        io.to(messageData.conversationId).emit('responseMessage', noDetailMsg);
+                        db.saveChatMessage({ conversationId: messageData.conversationId, messageId: noDetailMsg.messageId, role: 'assistant', messageText: noDetailText, intent: null, matchedIssue: 'followup_support', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: noDetailMsg.timestamp });
+
+                        return;
+                    }
+
+                    // User actually provided details — forward to Teams
+                    saveFollowupTicket(activeTicket, messageData.text, messageData.conversationId);
+                    activeTicket.status = 'awaiting_agent_reply';
+                    db.saveTicket(activeTicket);
+
+                    await sendFollowupToTeams(activeTicket, messageData);
+                    console.log(`📤 User provided details — follow-up on ticket ${activeTicket.id} forwarded to Teams`);
+
+                    const detailFollowUpText = "Thanks for the details. I've shared your follow-up with the support team. They'll get back to you shortly.";
+                    const detailFollowUpMsg = {
+                        type: 'response',
+                        sender: 'AI Assistant',
+                        timestamp: new Date().toISOString(),
+                        text: detailFollowUpText,
+                        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                        originalMessageId: messageData.messageId,
+                        category: 'followup_support',
+                        conversationId: messageData.conversationId,
+                        ticket_id: activeTicket.id
+                    };
+
+                    messages.push(detailFollowUpMsg);
+                    conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: detailFollowUpText, assistant_message: detailFollowUpText, matched_issue: 'followup_support', ticket_id: activeTicket.id, messageId: detailFollowUpMsg.messageId, created_at: detailFollowUpMsg.timestamp });
+                    updateChatSummary(messageData.conversationId, { assistant_message: detailFollowUpText, matched_issue: 'followup_support', ticket_id: activeTicket.id });
+                    updateConversation(messageData.conversationId, { preview: detailFollowUpText });
+                    io.to(messageData.conversationId).emit('responseMessage', detailFollowUpMsg);
+                    db.saveChatMessage({ conversationId: messageData.conversationId, messageId: detailFollowUpMsg.messageId, role: 'assistant', messageText: detailFollowUpText, intent: null, matchedIssue: 'followup_support', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: detailFollowUpMsg.timestamp });
 
                     return;
                 }
@@ -1286,15 +1999,162 @@ io.on('connection', (socket) => {
 
                 // ---- STATE: awaiting_agent_reply or other active states ----
                 // User already sent a follow-up and we're waiting for the agent.
-                // Record the message but don't spam Teams again.
-                activeTicket.latest_user_message = messageData.text;
-                activeTicket.updated_at = new Date().toISOString();
-                if (!activeTicket.followups) activeTicket.followups = [];
-                activeTicket.followups.push({ message: messageData.text, created_at: new Date().toISOString() });
-                if (activeTicket.followups.length > 20) activeTicket.followups = activeTicket.followups.slice(-20);
-                db.saveTicket(activeTicket);
 
-                const waitText = "Your follow-up has already been shared with the support team. They'll get back to you shortly.";
+                // --- STEP 0: Handled via classifyTicketIntent which now includes 'clarification' ---
+                const normalizedWait = messageData.text.trim().toLowerCase();
+
+                // --- STEP 1: Ticket status inquiry (fast-path) ---
+                // Only match genuine status questions, NOT clarification requests
+                if (/\b(ticket|issue|status|update|progress|eta|when|how\s*long|any\s*(update|news|response|reply)|where\s*(is|are)|what('?s|\s+is)\s*(the|my)?\s*(status|update|progress|ticket))\b/i.test(normalizedWait) &&
+                    !/\b(new|different|another|also|additionally|separate)\b/i.test(normalizedWait) &&
+                    !/\b(wdym|what\s*(do|did|does)\s*(you|u|that|it)\s*mean|mean\s*by)\b/i.test(normalizedWait) &&
+                    !/\b(you|u)\s*(said|wrote|told|mentioned|typed|definitely|literally|just\s*said)\b/i.test(normalizedWait)) {
+                    const ticketAge = Math.round((Date.now() - new Date(activeTicket.created_at).getTime()) / 60000);
+                    let statusText;
+                    if (ticketAge < 5) {
+                        statusText = `Your ticket (${activeTicket.id}) was just created a few minutes ago. The support team has been notified and will respond shortly. Hang tight!`;
+                    } else if (ticketAge < 60) {
+                        statusText = `Your ticket (${activeTicket.id}) is currently with the support team — it's been about ${ticketAge} minutes since it was created. They're working on it and I'll notify you as soon as there's a response.`;
+                    } else {
+                        const hours = Math.round(ticketAge / 60);
+                        statusText = `Your ticket (${activeTicket.id}) has been open for about ${hours} hour${hours > 1 ? 's' : ''}. The support team is still working on it. I'll let you know the moment they respond.`;
+                    }
+
+                    const statusMsg = {
+                        type: 'response',
+                        sender: 'AI Assistant',
+                        timestamp: new Date().toISOString(),
+                        text: statusText,
+                        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                        originalMessageId: messageData.messageId,
+                        category: 'status_inquiry',
+                        conversationId: messageData.conversationId,
+                        ticket_id: activeTicket.id
+                    };
+
+                    messages.push(statusMsg);
+                    conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: statusText, assistant_message: statusText, matched_issue: 'status_inquiry', ticket_id: activeTicket.id, messageId: statusMsg.messageId, created_at: statusMsg.timestamp });
+                    updateChatSummary(messageData.conversationId, { assistant_message: statusText, matched_issue: 'status_inquiry', ticket_id: activeTicket.id });
+                    updateConversation(messageData.conversationId, { preview: statusText });
+                    io.to(messageData.conversationId).emit('responseMessage', statusMsg);
+                    db.saveChatMessage({ conversationId: messageData.conversationId, messageId: statusMsg.messageId, role: 'assistant', messageText: statusText, intent: null, matchedIssue: 'status_inquiry', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: statusMsg.timestamp });
+
+                    console.log(`📊 Status inquiry from user on ticket ${activeTicket.id} — specific status sent`);
+                    return;
+                }
+
+                // --- STEP 2: Local pre-classifier catches non-support messages ---
+                // Greetings, off-topic, bot capability, goodbyes, etc. — respond with ticket-aware context
+                const localIntent = classifyLocalIntent(messageData.text);
+                if (localIntent.matched) {
+                    // Append a ticket reminder to the local response
+                    const ticketReminder = ` Meanwhile, your support ticket (${activeTicket.id}) is still being handled — I'll notify you as soon as the team responds.`;
+                    const ticketAwareResponse = localIntent.response + ticketReminder;
+
+                    emitLocalResponse({
+                        io,
+                        messageData,
+                        responseText: ticketAwareResponse,
+                        category: localIntent.category,
+                        conversationId: messageData.conversationId
+                    });
+                    console.log(`🏠 Local response [${localIntent.category}] during active ticket ${activeTicket.id}: "${messageData.text}"`);
+                    return;
+                }
+
+                // --- STEP 3: Casual ack detection (ok, sure, cool, etc.) ---
+                const waitingIntent = await classifyTicketIntent(messageData.text, 'waiting_for_agent');
+                console.log(`🔍 Waiting intent for "${messageData.text}": ${waitingIntent}`);
+
+                if (waitingIntent === 'casual_ack') {
+                    const ackWaitText = "No worries! The support team is working on it. I'll let you know as soon as they respond.";
+                    const ackWaitMsg = {
+                        type: 'response',
+                        sender: 'AI Assistant',
+                        timestamp: new Date().toISOString(),
+                        text: ackWaitText,
+                        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                        originalMessageId: messageData.messageId,
+                        category: 'casual_ack',
+                        conversationId: messageData.conversationId,
+                        ticket_id: activeTicket.id
+                    };
+
+                    messages.push(ackWaitMsg);
+                    conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: ackWaitText, assistant_message: ackWaitText, matched_issue: 'casual_ack', ticket_id: activeTicket.id, messageId: ackWaitMsg.messageId, created_at: ackWaitMsg.timestamp });
+                    updateChatSummary(messageData.conversationId, { assistant_message: ackWaitText, matched_issue: 'casual_ack', ticket_id: activeTicket.id });
+                    updateConversation(messageData.conversationId, { preview: ackWaitText });
+                    io.to(messageData.conversationId).emit('responseMessage', ackWaitMsg);
+                    db.saveChatMessage({ conversationId: messageData.conversationId, messageId: ackWaitMsg.messageId, role: 'assistant', messageText: ackWaitText, intent: null, matchedIssue: 'casual_ack', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: ackWaitMsg.timestamp });
+
+                    console.log(`💬 Casual acknowledgment from user on ticket ${activeTicket.id} — friendly reply sent`);
+                    return;
+                }
+
+                // LLM caught clarification, off_topic, or status_inquiry that regex missed
+                if (waitingIntent === 'clarification') {
+                    const clarificationText = await generateClarificationResponse(messageData.conversationId, messageData.text, activeTicket);
+                    const clarifyMsg = {
+                        type: 'response',
+                        sender: 'AI Assistant',
+                        timestamp: new Date().toISOString(),
+                        text: clarificationText,
+                        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                        originalMessageId: messageData.messageId,
+                        category: 'clarification',
+                        conversationId: messageData.conversationId,
+                        ticket_id: activeTicket.id
+                    };
+
+                    messages.push(clarifyMsg);
+                    conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: clarificationText, assistant_message: clarificationText, matched_issue: 'clarification', ticket_id: activeTicket.id, messageId: clarifyMsg.messageId, created_at: clarifyMsg.timestamp });
+                    updateChatSummary(messageData.conversationId, { assistant_message: clarificationText, matched_issue: 'clarification', ticket_id: activeTicket.id });
+                    updateConversation(messageData.conversationId, { preview: clarificationText });
+                    io.to(messageData.conversationId).emit('responseMessage', clarifyMsg);
+                    db.saveChatMessage({ conversationId: messageData.conversationId, messageId: clarifyMsg.messageId, role: 'assistant', messageText: clarificationText, intent: null, matchedIssue: 'clarification', issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: clarifyMsg.timestamp });
+
+                    console.log(`💡 Clarification (LLM-detected) on ticket ${activeTicket.id}: "${messageData.text}"`);
+                    return;
+                }
+
+                if (waitingIntent === 'off_topic' || waitingIntent === 'status_inquiry') {
+                    let responseText;
+                    if (waitingIntent === 'status_inquiry') {
+                        const ticketAge = Math.round((Date.now() - new Date(activeTicket.created_at).getTime()) / 60000);
+                        responseText = ticketAge < 60
+                            ? `Your ticket (${activeTicket.id}) is with the support team — about ${ticketAge} minute${ticketAge !== 1 ? 's' : ''} in. I'll let you know as soon as they respond.`
+                            : `Your ticket (${activeTicket.id}) has been open for about ${Math.round(ticketAge / 60)} hour${Math.round(ticketAge / 60) > 1 ? 's' : ''}. The team is still working on it — I'll update you when they reply.`;
+                    } else {
+                        responseText = `I appreciate the chat! 😊 Your support ticket (${activeTicket.id}) is still being handled — I'll let you know as soon as the team responds.`;
+                    }
+
+                    const llmCatchMsg = {
+                        type: 'response',
+                        sender: 'AI Assistant',
+                        timestamp: new Date().toISOString(),
+                        text: responseText,
+                        messageId: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+                        originalMessageId: messageData.messageId,
+                        category: waitingIntent,
+                        conversationId: messageData.conversationId,
+                        ticket_id: activeTicket.id
+                    };
+
+                    messages.push(llmCatchMsg);
+                    conversationMessagesStore[messageData.conversationId].push({ role: 'assistant', message_text: responseText, assistant_message: responseText, matched_issue: waitingIntent, ticket_id: activeTicket.id, messageId: llmCatchMsg.messageId, created_at: llmCatchMsg.timestamp });
+                    updateChatSummary(messageData.conversationId, { assistant_message: responseText, matched_issue: waitingIntent, ticket_id: activeTicket.id });
+                    updateConversation(messageData.conversationId, { preview: responseText });
+                    io.to(messageData.conversationId).emit('responseMessage', llmCatchMsg);
+                    db.saveChatMessage({ conversationId: messageData.conversationId, messageId: llmCatchMsg.messageId, role: 'assistant', messageText: responseText, intent: null, matchedIssue: waitingIntent, issueSummary: null, attachmentSummary: null, ticketId: activeTicket.id, fileUrl: null, fileType: null, fileName: null, createdAt: llmCatchMsg.timestamp });
+
+                    console.log(`🔍 LLM caught ${waitingIntent} during active ticket ${activeTicket.id}`);
+                    return;
+                }
+
+                // --- STEP 4: Only true substantive follow-ups get forwarded ---
+                saveFollowupTicket(activeTicket, messageData.text, messageData.conversationId);
+
+                const waitText = "Your follow-up has been shared with the support team. They'll get back to you shortly.";
                 const waitMessage = {
                     type: 'response',
                     sender: 'AI Assistant',
@@ -1318,7 +2178,39 @@ io.on('connection', (socket) => {
             }
             // ========== END BACK-AND-FORTH ==========
 
-            // No active ticket — proceed with normal n8n flow
+            // ========== LOCAL PRE-CLASSIFIER (no LLM) ==========
+            if (messageData.text && !messageData.file_url) {
+                // --- Escalation gate: intercept support requests before min attempts ---
+                if (isEscalationRequest(messageData.text)) {
+                    const gate = checkEscalationGate(messageData.conversationId);
+                    if (gate.gated) {
+                        emitLocalResponse({
+                            io,
+                            messageData,
+                            responseText: gate.response,
+                            category: 'escalation_gate',
+                            conversationId: messageData.conversationId
+                        });
+                        console.log(`🚧 Escalation gated for ${messageData.conversationId}: ${gate.botAttempts}/${MIN_BOT_ATTEMPTS_BEFORE_ESCALATION} attempts`);
+                        return;
+                    }
+                }
+
+                const localIntent = classifyLocalIntent(messageData.text);
+                if (localIntent.matched) {
+                    emitLocalResponse({
+                        io,
+                        messageData,
+                        responseText: localIntent.response,
+                        category: localIntent.category,
+                        conversationId: messageData.conversationId
+                    });
+                    return;
+                }
+            }
+            // ========== END LOCAL PRE-CLASSIFIER ==========
+
+            // No active ticket, no local match — proceed with normal n8n flow
             await sendToN8n(messageData);
         } catch (error) {
             console.error('❌ Error sending message:', error.message);
@@ -1792,6 +2684,38 @@ app.post('/api/send-response', async (req, res) => {
         setTimeout(() => {
             processedTeamsReplies.delete(dedupeKey);
         }, 10 * 60 * 1000);
+
+        // ---- STALE THREAD FILTER ----
+        // Only accept replies from the latest active escalation thread for a conversation.
+        // If the replyToMessageId maps to an old/resolved ticket, silently ignore the reply.
+        if (conversationId && replyToMessageId) {
+            const threadMapping = teamsThreadMap[String(replyToMessageId)];
+            if (threadMapping && threadMapping.ticket_id) {
+                const threadTicket = ticketsStore[threadMapping.ticket_id];
+                if (threadTicket && threadTicket.status === 'resolved') {
+                    console.log(`⚠️ STALE THREAD: Reply on resolved ticket ${threadMapping.ticket_id} — ignoring`);
+                    console.log('=============================================================\n');
+                    return res.json({
+                        success: true,
+                        ignored: true,
+                        reason: 'reply on resolved/stale ticket thread'
+                    });
+                }
+
+                // Check if there's a newer ticket for this conversation
+                const latestTicket = findActiveTicketForConversation(conversationId);
+                if (latestTicket && latestTicket.id !== threadMapping.ticket_id) {
+                    console.log(`⚠️ STALE THREAD: Reply on old ticket ${threadMapping.ticket_id}, latest is ${latestTicket.id} — ignoring`);
+                    console.log('=============================================================\n');
+                    return res.json({
+                        success: true,
+                        ignored: true,
+                        reason: `reply on old ticket thread (latest: ${latestTicket.id})`
+                    });
+                }
+            }
+        }
+        // ---- END STALE THREAD FILTER ----
 
         // ---- MODERATION INTERCEPT ----
         // Any response NOT explicitly from the AI Assistant goes through moderation.
@@ -2613,8 +3537,17 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`📡 n8n webhook: ${N8N_WEBHOOK_URL}`);
     initializeN8nConnection();
 
-    // ---- Restore data from MySQL on startup ----
+    // ---- Run pending SQL migrations, then restore data ----
     const dbOk = await db.testConnection();
+    if (dbOk) {
+        try {
+            const migrateModule = require('./db/migrate-lib');
+            await migrateModule.runPendingMigrations(dbPool);
+        } catch (migErr) {
+            console.error('⚠️  Auto-migration skipped:', migErr.message);
+        }
+    }
+
     if (dbOk) {
         // Restore tickets
         const ticketRows = await db.loadTickets();
