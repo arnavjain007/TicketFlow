@@ -100,7 +100,7 @@ PORT=8000
 GEMINI_API_KEY=your-gemini-api-key-here
 
 # n8n webhook URL (update after importing the workflow)
-N8N_WEBHOOK_URL=http://localhost:5678/webhook/chat-support
+N8N_WEBHOOK_URL=http://localhost:5680/webhook/chat-support
 
 # MySQL
 MYSQL_HOST=localhost
@@ -161,7 +161,7 @@ services:
     image: docker.n8n.io/n8nio/n8n
     restart: always
     ports:
-      - "5678:5678"
+      - "5680:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
@@ -181,7 +181,7 @@ docker compose up -d
 
 ### 9. Import the n8n workflow
 
-1. Open n8n at **http://localhost:5678**
+1. Open n8n at **http://localhost:5680**
 2. Go to **Workflows → Import from File**
 3. Import `n8n-workflow.json`
 4. **Configure the Gemini credential** in n8n:
