@@ -779,7 +779,7 @@ function classifyLocalIntent(text) {
         }
     }
 
-    // ── 7. NO-ISSUE / JUST BROWSING ──
+    // ── 7. NO-ISSUE / JUST BROWSING / DISMISSAL ──
     const noIssuePatterns = [
         /^i\s*don'?t\s*have\s*(a\s*|any\s*)?(issue|problem|error|complaint|question)s?$/,
         /^(i\s*don'?t\s*need\s*(any\s*)?help|no\s*help\s*needed)$/,
@@ -788,7 +788,14 @@ function classifyLocalIntent(text) {
         /^(i\s*don'?t\s*want\s*to\s*raise\s*(a\s*)?ticket)$/,
         /^(no\s*issues?|no\s*problems?|everything\s*(is\s*)?(fine|good|ok|okay|working))$/,
         /^what\s*if\s*i\s*don'?t\s*(want|need)\s*(any\s*)?(service|help|support)$/,
-        /^i\s*don'?t\s*(want|need)\s*(any\s*)?(service|help|support|assistance)$/
+        /^i\s*don'?t\s*(want|need)\s*(any\s*)?(service|help|support|assistance)$/,
+        // Dismissals: "theres nothing you can help with", "you cant help me", etc.
+        /^there('?s?|\s*is)\s*nothing\s*(you|u)\s*(can|could)\s*(help|do|assist)\s*(me\s*)?(with)?$/,
+        /^(you|u)\s*(can'?t|cannot|couldn'?t|won'?t)\s*(help|assist|do\s*anything\s*for)\s*(me|us)?$/,
+        /^nothing\s*(you|u)\s*(can|could)\s*(help|do|assist)\s*(me\s*)?(with)?$/,
+        /^(you|u)\s*(are|r)\s*(no|not)\s*(help|useful|use)$/,
+        /^(nah|no|nope)\s*(there'?s?\s*)?(nothing|nah)\s*(you|u)?\s*(can)?\s*(help|do)?\s*(with)?$/,
+        /^(i'?m?\s*(good|fine|okay|ok)|no\s*thanks|no\s*thank\s*you|all\s*good)\s*[.!]*$/
     ];
     for (const p of noIssuePatterns) {
         if (p.test(msg)) {
