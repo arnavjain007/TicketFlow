@@ -47,8 +47,7 @@ package.json         — Dependencies and scripts
 
 - **Node.js** v18+
 - **MySQL** 8.x
-- **n8n** (runs in Docker)
-- **Docker** & Docker Compose
+- **n8n** (installed globally via npm, managed with systemd)
 - (Optional) **ngrok** if you need a public URL for n8n webhooks
 
 ## Setup
@@ -96,7 +95,7 @@ PORT=8000
 GEMINI_API_KEY=your-gemini-api-key-here
 
 # n8n webhook URL
-N8N_WEBHOOK_URL=http://localhost:5678/webhook/chat-support
+N8N_WEBHOOK_URL=http://localhost:5680/webhook/chat-support
 
 # MySQL
 MYSQL_HOST=localhost
@@ -147,37 +146,111 @@ npm run migrate:create -- add_user_preferences
 # Edit the file, write your SQL, then run: npm run migrate
 ```
 
-### 8. Start n8n (Docker)
+### 8. Start n8n (systemd service)
 
-Create a `docker-compose.yml` for n8n (or use an existing one):
+n8n runs natively via a systemd service (not Docker). Follow the steps below to set it up.
 
-```yaml
-services:
-  n8n:
-    image: docker.n8n.io/n8nio/n8n
-    restart: always
-    ports:
-      - "5680:5678"
-    environment:
-      - N8N_HOST=localhost
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - NODE_ENV=production
-      # Uncomment and set if using ngrok for external webhook access:
-      # - WEBHOOK_URL=https://your-ngrok-url/
-    volumes:
-      - ./n8n_data:/home/node/.n8n
-```
-
-Start n8n:
+#### a. Install n8n globally
 
 ```bash
-docker compose up -d
+npm install -g n8n
 ```
+
+#### b. Create the config directory and environment file
+
+```bash
+mkdir -p ~/.n8n-systemd
+
+cat > ~/.n8n-systemd/n8n.env << 'EOF'
+N8N_PORT=5680
+N8N_RUNNERS_BROKER_PORT=5681
+N8N_USER_MANAGEMENT_DISABLED=true
+EOF
+```
+
+#### c. Find your n8n binary path
+
+```bash
+which n8n
+# Example output: /home/arnavjain/.nvm/versions/node/v20.20.1/bin/n8n
+```
+
+Use the exact path from the output in the service file below.
+
+#### d. Create the systemd service file
+
+```bash
+sudo nano /etc/systemd/system/n8n.service
+```
+
+Paste the following (update `ExecStart` if your `which n8n` path differs):
+
+```ini
+[Unit]
+Description=n8n workflow automation
+After=network.target
+
+[Service]
+Type=simple
+User=arnavjain
+WorkingDirectory=/home/arnavjain
+EnvironmentFile=/home/arnavjain/.n8n-systemd/n8n.env
+ExecStart=/home/arnavjain/.nvm/versions/node/v20.20.1/bin/n8n
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### e. Enable and start the service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable n8n
+sudo systemctl start n8n
+```
+
+#### f. Verify it's running
+
+```bash
+sudo systemctl status n8n    # should show "active (running)"
+lsof -i :5680                # main n8n app
+lsof -i :5681                # runner broker
+```
+
+Open n8n in your browser at **http://localhost:5680**.
+
+#### g. Clean up .bashrc (important)
+
+If you previously had n8n environment variables or startup commands in `~/.bashrc`, **remove them** to avoid conflicts with the systemd service:
+
+```bash
+# Remove lines like these if present:
+#   export N8N_PORT=5680
+#   export N8N_RUNNERS_BROKER_PORT=5681
+#   export N8N_USER_MANAGEMENT_DISABLED=true
+#   n8n
+
+# Then reload:
+source ~/.bashrc
+```
+
+#### h. Useful systemd commands
+
+| Command | Action |
+|---------|--------|
+| `sudo systemctl stop n8n` | Stop n8n |
+| `sudo systemctl restart n8n` | Restart n8n |
+| `sudo systemctl disable n8n` | Disable auto-start on boot |
+| `journalctl -u n8n -f` | Stream live logs |
+| `journalctl -u n8n -n 50 --no-pager` | View last 50 log lines |
+
+> **Tip:** If n8n fails to start, the most common cause is a wrong `ExecStart` path. Check with `which n8n` and update the service file.
 
 ### 9. Import the n8n workflow
 
-1. Open n8n at `http://localhost:5678`
+1. Open n8n at `http://localhost:5680`
 2. Go to **Workflows → Import from File**
 3. Import `n8n-workflow.json`
 4. **Configure the Gemini credential** in n8n:
@@ -188,9 +261,9 @@ docker compose up -d
    - **Intent Classifier** (Gemini chat node)
    - **Issue Matcher** (Gemini chat node)
    - Any other Gemini-powered nodes
-6. **Update the server URL** in all HTTP Request nodes if your server isn't at `http://172.17.0.1:8000`:
-   - Search for `172.17.0.1:8000` in the workflow JSON and replace with your server's address
-   - If n8n runs on the same machine as the server: use `http://host.docker.internal:8000` (Mac/Windows) or `http://172.17.0.1:8000` (Linux Docker)
+6. **Update the server URL** in all HTTP Request nodes if your server isn't at `http://localhost:8000`:
+   - Search for `172.17.0.1:8000` or `localhost:8000` in the workflow JSON and replace with your server's address
+   - Since n8n runs natively (not in Docker), `http://localhost:8000` should work directly
 7. **Activate** the workflow (toggle in top-right)
 8. Copy the webhook URL from the **Webhook** trigger node and update `N8N_WEBHOOK_URL` in your `.env`
 
@@ -255,7 +328,7 @@ Open the chat at **http://localhost:8000**
        ├─ HTTP POST to n8n (for everything else)
        │       │
        │       ▼
-       │   n8n Workflow (:5678)
+       │   n8n Workflow (:5680)
        │    ├─ Regex pre-classify (greetings, error codes, follow-ups)
        │    ├─ LLM intent classification (Gemini)
        │    ├─ KB issue matching (45 entries)
@@ -332,11 +405,11 @@ Open the chat at **http://localhost:8000**
 
 | Issue | Solution |
 |-------|----------|
-| `Cannot connect to n8n` | Ensure n8n is running (`docker ps`), check `N8N_WEBHOOK_URL` matches the webhook trigger URL |
+| `Cannot connect to n8n` | Ensure n8n is running (`sudo systemctl status n8n`), check `N8N_WEBHOOK_URL` matches the webhook trigger URL |
 | `GEMINI_API_KEY not set` | Add your key to `.env`; also configure the credential in n8n |
 | `MySQL connection refused` | Verify MySQL is running, credentials in `.env` are correct |
 | `n8n nodes show "no credential"` | Open the workflow in n8n, click each Gemini node, and assign your Gemini credential |
-| `172.17.0.1 connection refused` | n8n can't reach the server; try `host.docker.internal:8000` or your machine's LAN IP |
+| `172.17.0.1 connection refused` | Since n8n runs natively, use `localhost:8000` as the server URL in workflow HTTP nodes |
 | `Teams replies not arriving` | Check Power Automate flow is active, verify the `/api/send-response` URL is reachable |
 | `Moderation rejecting valid replies` | Check the moderation dashboard at `/moderation.html`; the vocabulary list may need expansion |
 
