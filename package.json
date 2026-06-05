@@ -1,7 +1,7 @@
 {
     "name": "chat-support-system",
     "version": "1.0.0",
-    "description": "Chat support system with n8n integration",
+    "description": "Modular chat support microservice with n8n, Teams, and LLM integration",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
